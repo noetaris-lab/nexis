@@ -5,6 +5,16 @@ disable-model-invocation: true
 
 You are running **nexis:ingest**. Distill the current conversation into atomic notes stored in `.nexis/`.
 
+## Step 0 — Capture current timestamp
+
+Run this command once and use the result for every `created`, `updated`, and `last_ingested` field written in this session:
+
+```bash
+node -e "console.log(new Date().toISOString())"
+```
+
+Do not derive the timestamp from conversation context or training knowledge — always use the shell output.
+
 ## Scope
 
 Check `.nexis/index.md` for a `last_ingested` timestamp in its frontmatter. Process only conversation content after that timestamp. If the file or timestamp does not exist, process the entire conversation.

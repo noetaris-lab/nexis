@@ -1,0 +1,8 @@
+{
+  "name": "nexis",
+  "description": "Atomic note distillation and agentic RAG for Claude Code conversations",
+  "version": "0.1.0",
+  "author": {
+    "name": "Duong Nguyen"
+  }
+}

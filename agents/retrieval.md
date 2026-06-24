@@ -17,7 +17,7 @@ Parse the table rows. Apply filters in this order:
 1. If `mode: current`, discard rows where `status` is `superseded` or `archived`.
 2. If `type` is not `any`, discard rows where the `type` column does not match the specified type.
 
-From the remaining rows, select up to **10 candidate IDs** whose `title`, `type`, `tags`, and `summary` are most relevant to the query. Relevance means: the note's content would meaningfully help answer or provide context for the query. It is fine to select fewer than 10 if fewer are genuinely relevant.
+For each remaining row, ask: "Can I state in one sentence why this note directly addresses the query?" If you cannot, skip it. From the rows that pass this test, select up to **10 candidate IDs**, ranked by how directly they address the query. Prefer fewer, higher-confidence candidates over filling the quota.
 
 ## Phase 2 — Load candidates
 
@@ -25,7 +25,7 @@ Read `.nexis/notes/<id>.md` for each selected candidate ID.
 
 ## Phase 3 — Graph traversal
 
-You have a traversal **budget of 10 additional notes**. Collect all outgoing edges from loaded notes into a priority queue and process them in this order:
+You have a traversal **budget of 5 additional notes**. Collect all outgoing edges from loaded notes into a priority queue and process them in this order:
 
 **Budget-exempt (always follow, do not count against budget):**
 - `extends` — the linked note adds detail to an already-loaded note; almost always relevant
@@ -37,7 +37,7 @@ You have a traversal **budget of 10 additional notes**. Collect all outgoing edg
 - `supersedes` chains — follow the full chain only if `mode: full`; skip entirely if `mode: current`
 
 **Budget-gated:**
-- `relates_to`, `depends-on`, `implements`, `part-of` — before loading, assess whether the linked note's title and tags (visible in the index) suggest it is relevant to the query. If yes, load it and decrement budget by 1. Stop when budget reaches 0.
+- `relates_to`, `depends-on`, `implements`, `part-of` — apply the same one-sentence test from Phase 1: if you cannot state why the linked note directly addresses the query, skip it. If it passes, load it and decrement budget by 1. Stop when budget reaches 0.
 
 Never load the same note twice. Deduplicate by ID.
 

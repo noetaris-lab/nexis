@@ -2,7 +2,7 @@
 
 A Claude Code plugin for capturing and retrieving project knowledge using the ZettelKasten method.
 
-Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. Later, `/nexis:recall` surfaces relevant notes as context before you start new work.
+Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, and `/nexis:wiki` projects the same notes into a human-readable onboarding wiki.
 
 ## Installation
 
@@ -55,6 +55,25 @@ Low-level retrieval used internally by ingest and recall. Invoke directly to deb
 Flags:
 - `--mode full` — include superseded notes (default: active only)
 - `--type <concept|entity|decision|problem>` — restrict results to one note type
+
+### `/nexis:wiki`
+
+Projects your notes into a human-readable onboarding wiki (overview → topics → detail). The wiki is a **machine-owned derived view** — notes stay the single source of truth, and pages are regenerated rather than hand-edited.
+
+The skill auto-detects whether to **build** (no wiki yet) or **sync** (incremental update from note changes). Because it derives the topic taxonomy, it is best run on an **Opus** session.
+
+```
+/nexis:wiki
+/nexis:wiki --out wiki/src --target starlight
+/nexis:wiki --rebuild
+```
+
+Flags:
+- `--out <path>` — content root for the generated pages (default: `.nexis/wiki/`)
+- `--target <plain|starlight>` — output flavor; `starlight` emits Astro Starlight syntax
+- `--rebuild` — discard the existing taxonomy and rebuild from scratch
+
+You can also declare the wiki path/target in your project context (e.g. a line in `CLAUDE.md`) instead of passing flags each time; inline flags take precedence.
 
 ## Note format
 
@@ -124,9 +143,12 @@ Notes live in `.nexis/` at the root of your project — not inside the plugin di
 ```
 <your-project>/
 └── .nexis/
-    ├── index.md        # compact manifest — one row per note
-    └── notes/
-        └── <id>.md    # one file per atomic note
+    ├── index.md              # compact manifest — one row per note
+    ├── notes/
+    │   └── <id>.md           # one file per atomic note
+    ├── wiki/                 # generated wiki pages (configurable via --out)
+    │   └── ...
+    └── wiki.manifest.md      # machine state for wiki sync (never rendered)
 ```
 
 Commit `.nexis/` to share notes with your team, or add it to `.gitignore` to keep notes personal.

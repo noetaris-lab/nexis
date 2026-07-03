@@ -130,32 +130,25 @@ For each note being superseded, patch its `.nexis/notes/<id>.md` frontmatter in-
 
 ## Step 3.5 — Propagate supersession to referrers
 
-Superseding a note can leave **other active notes** asserting claims derived from the note you just overrode. Supersession only patches the superseded note itself — it does not touch the notes that link *to* it, so those notes silently go stale. After patching each superseded note **B** (overridden by new note **A**), reconcile B's referrers.
+Superseding a note can leave **other active notes** asserting claims derived from the note you just overrode. Supersession only patches the superseded note itself — it does not touch the notes that link *to* it, so those notes silently go stale. After patching each superseded note **B** (overridden by new note **A**), reconcile B's referrers by delegating to the `nexis:reconcile` sub-agent — this keeps the referrer bodies out of the ingest context and shares one review procedure with `/nexis:doctor`.
 
-1. **Find referrers.** Grep `.nexis/notes/` for B's id:
+For each superseded note **B**:
+
+1. **Find referrers.** Grep `.nexis/notes/` for B's id and take the note ids from the results, excluding B itself and the superseding note A:
 
    ```bash
    grep -rl "<B-id>" .nexis/notes/
    ```
 
-   From the results, exclude B's own file and the superseding note A. Consider only referrers with `status: active` — superseded notes are history and stay untouched.
+   If no other note references B, skip B — there is nothing to reconcile.
 
-2. **Review each referrer against A.** A referrer needs revision *only if* its body embeds a claim, assumption, or detail that A changes or invalidates — e.g. B said "use Express", A says "use Fastify", and the referrer describes Express-specific behavior. If the referrer is still accurate under A, **leave it unchanged and do not stamp it.**
+2. **Delegate the review.** Spawn the `nexis:reconcile` agent with a task message containing:
+   - `superseded`: B's id
+   - `superseding`: A's id (or the list, if B was replaced by more than one)
+   - `referrers`: the ids from step 1
+   - `timestamp`: the timestamp captured in Step 0
 
-3. **For each referrer that is now inaccurate:**
-   - Revise the body text so its claims are correct under A.
-   - Append an update marker to the **end of the body** (do not remove earlier markers — stacked markers are the note's in-body history):
-
-     ```
-     
-     ---
-     *Updated: <ISO8601> — <one-line reason, referencing superseding note A's id>*
-     ```
-
-   - Set the frontmatter `updated` to the current timestamp.
-   - On the referrer's link to B, add or update its `note` field to record that the target was superseded, e.g. `note: "target superseded by <A-id>"`.
-
-   Do **not** change the referrer's `status` — it stays `active`. Do **not** repoint its link from B to A unless the referrer genuinely now concerns A rather than B.
+   The agent reads B and A, revises only the referrers whose content is genuinely inaccurate under A (appending an `*Updated:*` marker, bumping `updated`, annotating the link to B), leaves accurate ones untouched, and returns a compact manifest of what it revised vs. left clean. Record its result for the completion report and the index update.
 
 ## Step 4 — Update index
 
@@ -193,8 +186,8 @@ Before writing the completion report, verify each note created or patched in thi
 - [ ] `motivated-by` links target a note with `type: problem` or `type: decision`
 - [ ] This note appears in `index.md` with the correct `type` and `status`
 - [ ] Duplicate check: no near-identical note already exists (should have been caught in Step 2, but verify)
-- [ ] Every note superseded this session had its active referrers grepped (Step 3.5) and each reviewed against the superseding note
-- [ ] Each revised referrer has an appended `*Updated:*` marker, a bumped `updated` timestamp, and a `note` on its link to the superseded note; unchanged referrers were left untouched
+- [ ] Every note superseded this session had its referrers grepped and handed to a `nexis:reconcile` agent (Step 3.5), and each agent's result manifest was collected
+- [ ] Any referrer the agent revised is reflected in the index summary update (Step 4) if its summary changed
 
 ## Completion report
 

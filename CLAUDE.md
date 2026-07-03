@@ -12,6 +12,7 @@ nexis/
 │   └── plugin.json              # Plugin manifest — name "nexis" sets the /nexis: namespace
 ├── agents/
 │   ├── retrieval.md             # Haiku sub-agent (nexis:retrieval): index scan + graph traversal
+│   ├── reconcile.md             # Sonnet sub-agent (nexis:reconcile): supersession-propagation review, shared by ingest + doctor
 │   ├── wiki-scan.md             # Haiku sub-agent (nexis:wiki-scan): index-shard survey/assign for large stores
 │   └── wiki-page.md             # Sonnet sub-agent (nexis:wiki-page): per-topic page writer + fidelity self-check
 ├── scripts/
@@ -116,7 +117,7 @@ Add a `note` field to any link whose purpose would not be obvious from the `rel`
 
 Back-links are written explicitly on both notes at ingest time so traversal is bidirectional without a full scan.
 
-**Supersession propagation:** superseding a note can leave other *active* notes asserting claims derived from the overridden note. After patching a superseded note, ingest greps `.nexis/notes/` for referrers, reviews each active referrer against the superseding note, and — only for those whose content is now inaccurate — revises the body, appends an in-body `*Updated: <ISO8601> — <reason>*` marker (stacked markers preserve history), bumps `updated`, and annotates the referrer's link with a `note` recording that the target was superseded. Referrers that are still accurate are left untouched. Referrer `status` never changes; links are not repointed. See ingest Step 3.5.
+**Supersession propagation:** superseding a note can leave other *active* notes asserting claims derived from the overridden note. After patching a superseded note, ingest greps `.nexis/notes/` for referrers and hands them to the `nexis:reconcile` sub-agent, which reviews each active referrer against the superseding note and — only for those whose content is now inaccurate — revises the body, appends an in-body `*Updated: <ISO8601> — <reason>*` marker (stacked markers preserve history), bumps `updated`, and annotates the referrer's link with a `note` recording that the target was superseded. Referrers that are still accurate are left untouched. Referrer `status` never changes; links are not repointed. The same agent performs the retroactive review under `/nexis:doctor --fix-content`. See ingest Step 3.5 and `agents/reconcile.md`.
 
 ## Index format
 
@@ -159,8 +160,9 @@ Retrieval is split across two layers:
 | `/nexis:wiki` | Session model — prefer **Opus** | orchestrator: taxonomy derivation is the most reasoning-heavy step (skills inherit the session model, so this is a recommendation, not a hard-coded field) |
 | `wiki-scan.md` | Haiku | mechanical: index-shard tag stats and note→topic labeling |
 | `wiki-page.md` | Sonnet (Opus for highest-quality docs) | human-facing narrative synthesis + Mermaid + fidelity self-check |
-| `/nexis:doctor` | Session model — prefer **Sonnet/Opus** | orchestrator: runs the validator, then applies Tier-3 propagation judgment |
+| `/nexis:doctor` | Session model — prefer **Sonnet/Opus** | orchestrator: runs the validator, then delegates Tier-3 propagation judgment |
 | `scripts/doctor.mjs` | None (deterministic Node) | Tier-1/2 detection + safe repair; free and exact, scales to any note count |
+| `reconcile.md` | Sonnet | judgment: is a referrer stale under the superseding note? revise + stamp; shared by ingest + doctor |
 
 ## Wiki architecture
 
@@ -189,7 +191,7 @@ Human content is written to a **configurable content root** (precedence: inline 
 
 Safe `--fix` repairs are non-destructive: add missing back-links, correct `status`/`superseded_by`, normalize tags, reconcile the index (existing summaries preserved). It never deletes notes, edits bodies, removes links, or renames files — those are reported as **manual** TODOs.
 
-**`/nexis:doctor` (orchestrator, Sonnet/Opus)** — runs the validator, presents grouped findings, applies safe repairs under `--fix`, and under `--fix-content` performs the Tier-3 propagation review: for each candidate it judges whether the referrer's content is actually stale under the superseding note and, if so, applies the retroactive form of ingest's Step 3.5 (revise body, append `*Updated:*` marker, bump `updated`, annotate the link). Report-only by default.
+**`/nexis:doctor` (orchestrator, Sonnet/Opus)** — runs the validator, presents grouped findings, applies safe repairs under `--fix`, and under `--fix-content` performs the Tier-3 propagation review by grouping `propagation_candidates[]` per superseded note and delegating each group to a `nexis:reconcile` agent (spawned in parallel). Report-only by default. Delegation keeps candidate bodies out of the doctor context, so the retroactive backfill scales regardless of how much debt a legacy store holds; the same agent backs ingest's Step 3.5.
 
 ## Key conventions
 

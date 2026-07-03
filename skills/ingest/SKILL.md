@@ -128,12 +128,42 @@ For each note being superseded, patch its `.nexis/notes/<id>.md` frontmatter in-
 - Append `- id: <new-id>\n    rel: superseded_by` to its `links` array
 - Set `updated` to the current timestamp
 
+## Step 3.5 — Propagate supersession to referrers
+
+Superseding a note can leave **other active notes** asserting claims derived from the note you just overrode. Supersession only patches the superseded note itself — it does not touch the notes that link *to* it, so those notes silently go stale. After patching each superseded note **B** (overridden by new note **A**), reconcile B's referrers.
+
+1. **Find referrers.** Grep `.nexis/notes/` for B's id:
+
+   ```bash
+   grep -rl "<B-id>" .nexis/notes/
+   ```
+
+   From the results, exclude B's own file and the superseding note A. Consider only referrers with `status: active` — superseded notes are history and stay untouched.
+
+2. **Review each referrer against A.** A referrer needs revision *only if* its body embeds a claim, assumption, or detail that A changes or invalidates — e.g. B said "use Express", A says "use Fastify", and the referrer describes Express-specific behavior. If the referrer is still accurate under A, **leave it unchanged and do not stamp it.**
+
+3. **For each referrer that is now inaccurate:**
+   - Revise the body text so its claims are correct under A.
+   - Append an update marker to the **end of the body** (do not remove earlier markers — stacked markers are the note's in-body history):
+
+     ```
+     
+     ---
+     *Updated: <ISO8601> — <one-line reason, referencing superseding note A's id>*
+     ```
+
+   - Set the frontmatter `updated` to the current timestamp.
+   - On the referrer's link to B, add or update its `note` field to record that the target was superseded, e.g. `note: "target superseded by <A-id>"`.
+
+   Do **not** change the referrer's `status` — it stays `active`. Do **not** repoint its link from B to A unless the referrer genuinely now concerns A rather than B.
+
 ## Step 4 — Update index
 
 Ensure `.nexis/` and `.nexis/notes/` directories exist. Update `.nexis/index.md`:
 - Set `last_ingested` in frontmatter to the current timestamp
 - Append one row per new note
 - Update the `type` and `status` columns for any patched notes
+- Update the `summary` column for any referrer whose body was revised in Step 3.5 (only if its summary changed)
 
 Index format:
 
@@ -163,7 +193,9 @@ Before writing the completion report, verify each note created or patched in thi
 - [ ] `motivated-by` links target a note with `type: problem` or `type: decision`
 - [ ] This note appears in `index.md` with the correct `type` and `status`
 - [ ] Duplicate check: no near-identical note already exists (should have been caught in Step 2, but verify)
+- [ ] Every note superseded this session had its active referrers grepped (Step 3.5) and each reviewed against the superseding note
+- [ ] Each revised referrer has an appended `*Updated:*` marker, a bumped `updated` timestamp, and a `note` on its link to the superseded note; unchanged referrers were left untouched
 
 ## Completion report
 
-When done, report: how many notes were created, how many existing notes were superseded, and how many candidates were skipped as duplicates.
+When done, report: how many notes were created, how many existing notes were superseded, how many referrer notes were revised to propagate a supersession, and how many candidates were skipped as duplicates.

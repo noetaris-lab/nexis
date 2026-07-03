@@ -2,7 +2,7 @@
 
 A Claude Code plugin for capturing and retrieving project knowledge using the ZettelKasten method.
 
-Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, and `/nexis:wiki` projects the same notes into a human-readable onboarding wiki.
+Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki, and `/nexis:doctor` health-checks and repairs the note store.
 
 ## Installation
 
@@ -74,6 +74,29 @@ Flags:
 - `--rebuild` — discard the existing taxonomy and rebuild from scratch
 
 You can also declare the wiki path/target in your project context (e.g. a line in `CLAUDE.md`) instead of passing flags each time; inline flags take precedence.
+
+### `/nexis:doctor`
+
+Health-checks the note store and repairs it. A deterministic validator scans every note and the index, so it stays fast and free regardless of how many notes you have. Safe by default — it never deletes notes or edits bodies unless you ask, and destructive or judgment-based fixes are reported for you to resolve by hand.
+
+```
+/nexis:doctor                 # report only — scan and list defects, write nothing
+/nexis:doctor --fix           # also apply safe repairs
+/nexis:doctor --fix-content   # also revise notes left stale by a supersession
+```
+
+What it checks:
+
+- **Schema** — required fields, valid `type`/`status`, tag count/format, ISO8601 timestamps, `id` matches filename, no duplicate ids
+- **Graph** — valid `rel` types, no dangling or self links, correct `decided-by`/`motivated-by` targets, supersede back-link symmetry, `status`/`superseded_by` consistency, no supersede cycles
+- **Index** — every note has a row and vice versa, and rows match note frontmatter
+- **Propagation debt** — active notes still asserting content derived from a note that was later superseded but never revised
+
+What `--fix` repairs automatically (all non-destructive): missing back-links, `status`/`superseded_by` mismatches, tag normalization, and index reconciliation (existing summaries preserved). Everything else — dangling links, cycles, `id`/filename mismatches — is reported as a manual TODO.
+
+`--fix-content` additionally reviews each propagation-debt candidate and, only where the content is genuinely outdated, revises the note, appends an `*Updated: <timestamp>*` marker (preserving history), and records that the referenced note was superseded. This is the same reconciliation ingest performs going forward, applied retroactively to your existing notes.
+
+Notes are the single source of truth; the doctor treats them as such and prefers reporting over silent change.
 
 ## Note format
 

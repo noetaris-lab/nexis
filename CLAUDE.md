@@ -14,6 +14,8 @@ nexis/
 │   ├── retrieval.md             # Haiku sub-agent (nexis:retrieval): index scan + graph traversal
 │   ├── wiki-scan.md             # Haiku sub-agent (nexis:wiki-scan): index-shard survey/assign for large stores
 │   └── wiki-page.md             # Sonnet sub-agent (nexis:wiki-page): per-topic page writer + fidelity self-check
+├── scripts/
+│   └── doctor.mjs               # Deterministic validator + safe repairer used by /nexis:doctor
 ├── skills/
 │   ├── ingest/
 │   │   └── SKILL.md             # /nexis:ingest — distill conversation → atomic notes
@@ -21,8 +23,10 @@ nexis/
 │   │   └── SKILL.md             # /nexis:retrieve — spawns retrieval agent; usable directly for debugging
 │   ├── recall/
 │   │   └── SKILL.md             # /nexis:recall — retrieve + synthesize → inject context
-│   └── wiki/
-│       └── SKILL.md             # /nexis:wiki — build/sync a human-readable wiki from notes
+│   ├── wiki/
+│   │   └── SKILL.md             # /nexis:wiki — build/sync a human-readable wiki from notes
+│   └── doctor/
+│       └── SKILL.md             # /nexis:doctor — health-check + repair the note store
 └── CLAUDE.md
 ```
 
@@ -112,6 +116,8 @@ Add a `note` field to any link whose purpose would not be obvious from the `rel`
 
 Back-links are written explicitly on both notes at ingest time so traversal is bidirectional without a full scan.
 
+**Supersession propagation:** superseding a note can leave other *active* notes asserting claims derived from the overridden note. After patching a superseded note, ingest greps `.nexis/notes/` for referrers, reviews each active referrer against the superseding note, and — only for those whose content is now inaccurate — revises the body, appends an in-body `*Updated: <ISO8601> — <reason>*` marker (stacked markers preserve history), bumps `updated`, and annotates the referrer's link with a `note` recording that the target was superseded. Referrers that are still accurate are left untouched. Referrer `status` never changes; links are not repointed. See ingest Step 3.5.
+
 ## Index format
 
 `.nexis/index.md` is a compact manifest loaded first by the retrieval agent. It contains a `last_ingested` timestamp (used by ingest to scope the conversation) and one row per note.
@@ -153,6 +159,8 @@ Retrieval is split across two layers:
 | `/nexis:wiki` | Session model — prefer **Opus** | orchestrator: taxonomy derivation is the most reasoning-heavy step (skills inherit the session model, so this is a recommendation, not a hard-coded field) |
 | `wiki-scan.md` | Haiku | mechanical: index-shard tag stats and note→topic labeling |
 | `wiki-page.md` | Sonnet (Opus for highest-quality docs) | human-facing narrative synthesis + Mermaid + fidelity self-check |
+| `/nexis:doctor` | Session model — prefer **Sonnet/Opus** | orchestrator: runs the validator, then applies Tier-3 propagation judgment |
+| `scripts/doctor.mjs` | None (deterministic Node) | Tier-1/2 detection + safe repair; free and exact, scales to any note count |
 
 ## Wiki architecture
 
@@ -170,6 +178,19 @@ Adaptive depth: flat (home + topic pages) up to ~12 topics, then a section tier 
 
 Human content is written to a **configurable content root** (precedence: inline `--out` > a path declared in the loaded project context, e.g. CLAUDE.md / AGENTS.md > the manifest's recorded root on sync > default `.nexis/wiki/`). Machine state lives at `.nexis/wiki.manifest.md` regardless, so a doc site (e.g. Starlight) never renders it. The manifest records `output_root`, `target`, `last_synced`, `shard_threshold`, the topic table (with cached summaries), and the note→page map with per-row fingerprints. Fingerprints (`status|title|tags|summary` hash) drive cheap index-vs-manifest delta detection on sync — added / changed / removed — without reading any note bodies. Provenance lives only in the manifest note map; pages carry no visible note references.
 
+## Doctor architecture
+
+`/nexis:doctor` is the health check / linter / `fsck` for the note store. It splits work into a deterministic layer and a judgment layer so it stays cheap at any scale — the cheap pass filters, so the model only ever sees flagged candidates, never the whole store.
+
+**`scripts/doctor.mjs` (deterministic Node, no model)** — reads every note's frontmatter + `index.md` and emits a JSON report. Detects and (with `--fix`) safely repairs:
+- **Tier 1 — schema**: missing required fields, `type`/`status` vocab, tag count/format, ISO8601 timestamps, `updated >= created`, `id`↔filename, duplicate ids.
+- **Tier 2 — graph/index**: `rel` vocab, dangling/self links, `decided-by`→`decision` and `motivated-by`→`decision|problem` target types, supersede back-link symmetry, `status`/`superseded_by` consistency, supersede cycles, and index↔notes drift.
+- **Tier 3 — pre-filter only**: `propagation_candidates[]` — active referrers of a superseded note whose `updated` predates the override (keyed off the link graph, not the possibly-wrong `status` field). The script never edits these.
+
+Safe `--fix` repairs are non-destructive: add missing back-links, correct `status`/`superseded_by`, normalize tags, reconcile the index (existing summaries preserved). It never deletes notes, edits bodies, removes links, or renames files — those are reported as **manual** TODOs.
+
+**`/nexis:doctor` (orchestrator, Sonnet/Opus)** — runs the validator, presents grouped findings, applies safe repairs under `--fix`, and under `--fix-content` performs the Tier-3 propagation review: for each candidate it judges whether the referrer's content is actually stale under the superseding note and, if so, applies the retroactive form of ingest's Step 3.5 (revise body, append `*Updated:*` marker, bump `updated`, annotate the link). Report-only by default.
+
 ## Key conventions
 
 - **Skill frontmatter**: every `SKILL.md` must have a `description:` field so Claude knows when to invoke the skill automatically.
@@ -181,3 +202,4 @@ Human content is written to a **configurable content root** (precedence: inline 
 - **Wiki is autonomous**: `/nexis:wiki` builds or syncs without prompting; the completion report states what was created, updated, or reported as unassigned. It is `disable-model-invocation: true` (deliberate write op, like ingest).
 - **Wiki path/target override**: `/nexis:wiki` accepts `--out <path>`, `--target <plain|starlight>`, and `--rebuild`. Inline flags override any path/target declared in the loaded project context.
 - **Immutability assumption**: wiki sync detects deltas from `index.md` because notes change only via new superseding notes + status patches, never in-place body edits. In-place body edits are out of scope; `--rebuild` covers them.
+- **Doctor is graduated and safe-by-default**: `/nexis:doctor` is report-only with no flags; `--fix` applies only safe deterministic Tier-1/2 repairs; `--fix-content` additionally revises stale referrers (Tier-3). It never deletes notes or history — destructive/judgment fixes are reported, not applied. It is `disable-model-invocation: true`. The deterministic layer is a shipped script (`scripts/doctor.mjs`) run via `node "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.mjs"`, not per-note model work, so it scales to any store size.

@@ -1,5 +1,7 @@
 # nexis
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Claude Code plugin for capturing and retrieving project knowledge using the ZettelKasten method.
 
 Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. On an existing codebase, `/nexis:survey` bootstraps the note store directly from the code. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki, and `/nexis:doctor` health-checks and repairs the note store.

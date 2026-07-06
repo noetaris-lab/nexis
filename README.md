@@ -2,7 +2,7 @@
 
 A Claude Code plugin for capturing and retrieving project knowledge using the ZettelKasten method.
 
-Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki, and `/nexis:doctor` health-checks and repairs the note store.
+Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. On an existing codebase, `/nexis:survey` bootstraps the note store directly from the code. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki, and `/nexis:doctor` health-checks and repairs the note store.
 
 ## Installation
 
@@ -27,6 +27,30 @@ Run this after any session where decisions, tradeoffs, or insights were discusse
 ```
 /nexis:ingest
 ```
+
+### `/nexis:survey`
+
+Bootstraps atomic notes from an **existing codebase** — the brownfield counterpart to ingest. Where ingest distills conversations, survey distills the code itself: architecture, module boundaries, invariants, evidenced decisions, and risks. **Code is the source of truth** — docs and READMEs are treated as hints and verified against the implementation; where they disagree, the code wins and the contradiction is captured as a `problem` note.
+
+It scales to large repos by never reading the codebase in one context: a deterministic shell inventory (file tree, package manifests, git churn) partitions the project into analysis units, and parallel sub-agents deep-dive each unit selectively under a file budget, writing notes directly. Foundation units (shared/core code) are surveyed first so later agents link to shared concepts instead of duplicating them. Progress is checkpointed to `.nexis/survey.manifest.md`, so an interrupted survey resumes where it stopped.
+
+Survey checkpoints a fresh build, and on a later invocation **incrementally re-surveys**: it diffs the current git state against the commit last surveyed and re-analyzes only what changed. On a fresh build it only *adds* notes — a code contradiction with a prior note is recorded as a `contradicts` note, never edited or superseded. On a re-survey, an analyst may additionally supersede its *own* unit's stale prior notes (never another unit's or ingest's) and archive units whose code has disappeared, propagating both to referrers. Because drift detection is git-based, survey locks each repo to a branch at first survey and refuses rather than guesses on anything that would make that lineage untrustworthy — git missing, no repo found, a branch switch, rewritten history, or a dirty working tree.
+
+```
+/nexis:survey                          # build (or resume, auto-detected)
+/nexis:survey --plan                   # print the unit plan and cost estimate, write nothing
+/nexis:survey --paths services/auth    # trial run scoped to a subtree
+/nexis:survey --depth quick            # cheaper first pass
+/nexis:survey --rebuild                # discard any prior checkpoint, start over
+```
+
+Flags:
+- `--plan` — partition only; show units and estimated agent count, then stop
+- `--paths <dir>` — restrict the survey to a subtree
+- `--depth <quick|standard|deep>` — per-unit reading/note budget (default `standard`)
+- `--rebuild` — discard any prior survey checkpoint and start fresh
+
+Notes produced are schema-identical to ingest's, so `recall`, `wiki`, and `doctor` work on them unchanged. Best run on an **Opus** session — partitioning and cross-unit weave are the judgment-heavy steps.
 
 ### `/nexis:recall <query>`
 
@@ -171,7 +195,8 @@ Notes live in `.nexis/` at the root of your project — not inside the plugin di
     │   └── <id>.md           # one file per atomic note
     ├── wiki/                 # generated wiki pages (configurable via --out)
     │   └── ...
-    └── wiki.manifest.md      # machine state for wiki sync (never rendered)
+    ├── wiki.manifest.md      # machine state for wiki sync (never rendered)
+    └── survey.manifest.md    # machine state for codebase survey (unit plan + resume checkpoint)
 ```
 
 Commit `.nexis/` to share notes with your team, or add it to `.gitignore` to keep notes personal.

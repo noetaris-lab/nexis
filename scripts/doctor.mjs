@@ -29,8 +29,9 @@ const INDEX = path.join(NEXIS, 'index.md');
 const TYPES = new Set(['concept', 'entity', 'decision', 'problem']);
 const STATUSES = new Set(['active', 'superseded', 'archived']);
 const RELS = new Set([
-  'supersedes', 'superseded_by', 'extends', 'relates_to', 'contradicts',
-  'depends-on', 'implements', 'motivated-by', 'decided-by', 'part-of',
+  'supersedes', 'superseded_by', 'extends', 'extended_by', 'relates_to',
+  'contradicts', 'depends-on', 'implements', 'motivated-by', 'decided-by',
+  'part-of',
 ]);
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 
@@ -268,6 +269,28 @@ for (const B of notes) {
   }
 }
 
+// extends symmetry: N extends T  <->  T extended_by N
+for (const N of notes) {
+  for (const lk of N.fm.links.filter(l => l.rel === 'extends')) {
+    const T = byId.get(lk.id);
+    if (!T) continue; // already reported as dangling
+    if (!hasLink(T, N.fm.id, 'extended_by')) {
+      graph.push({ severity: 'warn', code: 'missing-extended-by', file: T.file, message: `${T.fm.id} is extended by ${N.fm.id} but lacks an extended_by back-link`, fixable: true });
+      (T.edits ||= []).push({ op: 'addLink', id: N.fm.id, rel: 'extended_by' });
+    }
+  }
+}
+for (const T of notes) {
+  for (const lk of T.fm.links.filter(l => l.rel === 'extended_by')) {
+    const N = byId.get(lk.id);
+    if (!N) continue;
+    if (!hasLink(N, T.fm.id, 'extends')) {
+      graph.push({ severity: 'warn', code: 'missing-extends', file: N.file, message: `${T.fm.id} claims extended_by ${N.fm.id} but ${N.fm.id} lacks an extends link`, fixable: true });
+      (N.edits ||= []).push({ op: 'addLink', id: T.fm.id, rel: 'extends' });
+    }
+  }
+}
+
 // supersede cycle detection
 {
   const succ = new Map();
@@ -290,7 +313,7 @@ for (const B of notes) {
   if (inCycle.size) graph.push({ severity: 'error', code: 'supersede-cycle', ids: [...inCycle], message: `supersede links form a cycle: ${[...inCycle].join(' -> ')}` });
 }
 
-// ---------- Tier 3 candidate filter: supersession-propagation debt ----------
+// ---------- Tier 3 candidate filter: content-propagation debt ----------
 // Deterministic PRE-FILTER only. A note B is "overridden" if something supersedes
 // it — determined from the link GRAPH, not B's status field, so this still fires
 // when the status flag is itself wrong. For each overridden B, list active
@@ -324,11 +347,46 @@ for (const [bId, ovs] of overriders) {
     const stale = !supersededAt || !C.fm.updated || C.fm.updated < supersededAt;
     if (stale) {
       propagation.push({
+        kind: 'supersession',
         referrer: C.fm.id, referrer_file: C.file, rel: link.rel,
         superseded: bId, superseded_by: ovs.map(o => o.id), superseded_at: supersededAt,
         referrer_updated: C.fm.updated,
       });
     }
+  }
+}
+
+// Extension-propagation debt: an active note T that a newer note N `extends`, whose
+// `updated` predates N — i.e. T was never reviewed for surface facts N may have
+// changed. Keyed off the extends/extended_by edge in either direction, so it fires
+// even when only one side of the back-link exists. The skill judges actual staleness.
+const extenders = new Map(); // T-id -> [{ id: N, at }]
+function addExtender(tId, nId, at) {
+  if (!byId.has(tId) || !byId.has(nId)) return;
+  const arr = extenders.get(tId) || extenders.set(tId, []).get(tId);
+  if (!arr.some(o => o.id === nId)) arr.push({ id: nId, at });
+}
+for (const N of notes) {
+  for (const lk of N.fm.links.filter(l => l.rel === 'extends')) addExtender(lk.id, N.fm.id, N.fm.created || N.fm.updated);
+}
+for (const T of notes) {
+  for (const lk of T.fm.links.filter(l => l.rel === 'extended_by')) {
+    const N = byId.get(lk.id);
+    if (N) addExtender(T.fm.id, N.fm.id, N.fm.created || N.fm.updated);
+  }
+}
+for (const [tId, exts] of extenders) {
+  const T = byId.get(tId);
+  if (!T || T.fm.status !== 'active') continue;
+  const extendedAt = exts.map(o => o.at).filter(Boolean).sort().pop(); // latest extension
+  const stale = !extendedAt || !T.fm.updated || T.fm.updated < extendedAt;
+  if (stale) {
+    propagation.push({
+      kind: 'extension',
+      target: tId, target_file: T.file,
+      extending: exts.map(o => o.id), extended_at: extendedAt,
+      target_updated: T.fm.updated,
+    });
   }
 }
 

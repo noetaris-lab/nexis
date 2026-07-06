@@ -55,17 +55,17 @@ If the mode is `--fix` (not `--fix-content`), present the applied fixes plus the
 
 ## Step 3 — Propagation-debt review (`--fix-content` only)
 
-The validator's `propagation_candidates[]` are active notes that link to a note which was later superseded and whose `updated` predates that supersession — i.e. they may still assert content derived from the overridden note. This is the retroactive form of ingest's Step 3.5, and it uses the same `nexis:reconcile` sub-agent — so the candidate note bodies never enter the doctor context, and the review scales no matter how much debt a legacy store has accumulated. Run this step only after Step 2 has repaired status/back-link defects, so the candidate set is accurate.
+The validator's `propagation_candidates[]` are active notes whose `updated` predates a newer note that changed their meaning — so they may still assert stale content. Each entry carries a `kind`: `supersession` (the note links to a note that was later superseded) or `extension` (the note was later extended by a newer note that may have changed a surface fact it embeds). This is the retroactive form of ingest's Step 3.5, and it uses the same `nexis:reconcile` sub-agent — so the candidate bodies never enter the doctor context, and the review scales no matter how much debt a legacy store has accumulated. Run this step only after Step 2 has repaired status/back-link defects, so the candidate set is accurate.
 
-1. **Group the candidates by their `superseded` id.** Each group is one overridden note plus the active referrers that still point at it (`superseded_by` gives the superseding note ids).
+1. **Group the candidates.**
+   - **Supersession candidates:** group by their `superseded` id. Each group is one overridden note plus the active referrers that still point at it (`superseded_by` gives the superseding note ids).
+   - **Extension candidates:** group by their `extending` id(s). Each group is one extending note plus the `target` notes it extends.
 
-2. **Delegate each group to a `nexis:reconcile` agent** (spawn them in parallel — the groups are independent). Each task message contains:
-   - `superseded`: the group's superseded id
-   - `superseding`: the group's `superseded_by` ids
-   - `referrers`: the candidate referrer ids in the group
-   - `timestamp`: the timestamp captured in Step 0
+2. **Delegate each group to a `nexis:reconcile` agent** (spawn them in parallel — the groups are independent). Each task message contains a `timestamp` (from Step 0) plus, by group kind:
+   - Supersession — `mode: supersession`, `superseded`: the group's superseded id, `superseding`: its `superseded_by` ids, `referrers`: the candidate referrer ids.
+   - Extension — `mode: extension`, `extending`: the group's extending id, `targets`: the candidate `target` ids.
 
-   Each agent reads the superseded and superseding notes, revises only the referrers whose content is genuinely inaccurate (appending an `*Updated:*` marker, bumping `updated`, annotating the link), leaves accurate ones untouched, and returns a compact manifest of revised vs. clean. Collect all manifests.
+   Each agent revises only the notes whose content is genuinely inaccurate under the newer note (appending an `*Updated:*` marker, bumping `updated`, annotating the link), leaves accurate ones untouched, and returns a compact manifest of revised vs. clean. Collect all manifests.
 
 3. **Reconcile the index.** After the agents finish, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.mjs" --fix` once more so any changed summaries and the index are reconciled, and to confirm the store is clean.
 

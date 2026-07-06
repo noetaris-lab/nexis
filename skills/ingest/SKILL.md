@@ -80,7 +80,8 @@ A note may carry multiple links of different types.
 |---|---|
 | `supersedes` | this note replaces the linked note (linked note gets a `superseded_by` back-link) |
 | `superseded_by` | back-link written automatically on the older note |
-| `extends` | adds detail to the linked note without replacing it |
+| `extends` | adds detail to the linked note without replacing it (linked note gets an `extended_by` back-link) |
+| `extended_by` | back-link written automatically on the extended note; carries a `note` recording what the extending note adds or changed |
 | `relates_to` | semantic neighbor — related but distinct concept |
 | `contradicts` | records a disagreement or alternative decision |
 | `depends-on` | this concept requires the target to function correctly |
@@ -128,9 +129,17 @@ For each note being superseded, patch its `.nexis/notes/<id>.md` frontmatter in-
 - Append `- id: <new-id>\n    rel: superseded_by` to its `links` array
 - Set `updated` to the current timestamp
 
-## Step 3.5 — Propagate supersession to referrers
+For each existing note being **extended** by a new note (a `rel: extends` link on the new note pointing at the existing note), patch the extended note's `.nexis/notes/<id>.md` frontmatter in-place so the graph is bidirectional:
+- Append `- id: <new-id>\n    rel: extended_by` to its `links` array, with a `note` field that summarizes what the new note adds or changes (e.g. `note: "renames the two agents to Guide/Analyst"`). Retrieval uses this `note` to decide whether loading the extending note is necessary, so make it specific.
+- Set `updated` to the current timestamp
 
-Superseding a note can leave **other active notes** asserting claims derived from the note you just overrode. Supersession only patches the superseded note itself — it does not touch the notes that link *to* it, so those notes silently go stale. After patching each superseded note **B** (overridden by new note **A**), reconcile B's referrers by delegating to the `nexis:reconcile` sub-agent — this keeps the referrer bodies out of the ingest context and shares one review procedure with `/nexis:doctor`.
+Leave the extended note's `status` as `active` and do not edit its body here — Step 3.5 handles any body correction.
+
+## Step 3.5 — Propagate changes to affected notes
+
+A new note can leave **existing active notes** asserting claims its content has invalidated. Step 3 patches only the directly-linked note's frontmatter — it never touches note *bodies* — so affected notes silently go stale. Two situations create this debt, and both are reconciled by delegating to the `nexis:reconcile` sub-agent (this keeps the affected bodies out of the ingest context and shares one review procedure with `/nexis:doctor`):
+
+**(a) Supersession referrers.** When new note **A** supersedes note **B**, *other* active notes that link to B may still assert claims derived from B's overridden content.
 
 For each superseded note **B**:
 
@@ -142,13 +151,24 @@ For each superseded note **B**:
 
    If no other note references B, skip B — there is nothing to reconcile.
 
-2. **Delegate the review.** Spawn the `nexis:reconcile` agent with a task message containing:
+2. **Delegate the review.** Spawn a `nexis:reconcile` agent with a task message containing:
+   - `mode`: `supersession`
    - `superseded`: B's id
    - `superseding`: A's id (or the list, if B was replaced by more than one)
    - `referrers`: the ids from step 1
    - `timestamp`: the timestamp captured in Step 0
 
-   The agent reads B and A, revises only the referrers whose content is genuinely inaccurate under A (appending an `*Updated:*` marker, bumping `updated`, annotating the link to B), leaves accurate ones untouched, and returns a compact manifest of what it revised vs. left clean. Record its result for the completion report and the index update.
+**(b) Extended targets.** When a new note **N** `extends` an existing note **T**, N may change a surface fact that T embeds (a rename, a corrected value, a narrowed scope). Because `extends` deliberately leaves T `active` — its core point still stands — a stale surface fact in T's body would otherwise go uncorrected and surface on recall.
+
+For each note **T** that a new note **N** extends:
+
+1. **Delegate the review.** Spawn a `nexis:reconcile` agent with a task message containing:
+   - `mode`: `extension`
+   - `extending`: N's id
+   - `targets`: T's id (batch multiple targets of the same N into one task)
+   - `timestamp`: the timestamp captured in Step 0
+
+In both cases the agent revises only the notes whose content is genuinely inaccurate under the newer note (appending an `*Updated:*` marker, bumping `updated`, annotating the link), leaves purely-additive or still-accurate notes untouched, and returns a compact manifest of revised vs. clean. Record each result for the completion report and the index update. Batch independent reconcile tasks in parallel.
 
 ## Step 4 — Update index
 
@@ -156,7 +176,7 @@ Ensure `.nexis/` and `.nexis/notes/` directories exist. Update `.nexis/index.md`
 - Set `last_ingested` in frontmatter to the current timestamp
 - Append one row per new note
 - Update the `type` and `status` columns for any patched notes
-- Update the `summary` column for any referrer whose body was revised in Step 3.5 (only if its summary changed)
+- Update the `title`/`summary` columns for any note whose body was revised in Step 3.5 (only if they changed)
 
 Index format:
 
@@ -186,9 +206,10 @@ Before writing the completion report, verify each note created or patched in thi
 - [ ] `motivated-by` links target a note with `type: problem` or `type: decision`
 - [ ] This note appears in `index.md` with the correct `type` and `status`
 - [ ] Duplicate check: no near-identical note already exists (should have been caught in Step 2, but verify)
-- [ ] Every note superseded this session had its referrers grepped and handed to a `nexis:reconcile` agent (Step 3.5), and each agent's result manifest was collected
-- [ ] Any referrer the agent revised is reflected in the index summary update (Step 4) if its summary changed
+- [ ] Every note extended this session carries an `extended_by` back-link to the extending note, with a specific `note` field, and its `updated` was bumped (Step 3)
+- [ ] Every note superseded this session had its referrers grepped and handed to a `nexis:reconcile` agent, and every note extended this session was handed to a `nexis:reconcile` agent in `extension` mode (Step 3.5); each agent's result manifest was collected
+- [ ] Any note the agent revised is reflected in the index summary update (Step 4) if its summary changed
 
 ## Completion report
 
-When done, report: how many notes were created, how many existing notes were superseded, how many referrer notes were revised to propagate a supersession, and how many candidates were skipped as duplicates.
+When done, report: how many notes were created, how many existing notes were superseded, how many existing notes were extended, how many notes were revised by reconcile to propagate a change (supersession or extension), and how many candidates were skipped as duplicates.

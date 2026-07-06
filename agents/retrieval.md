@@ -37,6 +37,7 @@ You have a traversal **budget of 5 additional notes**. Collect all outgoing edge
 - `supersedes` chains — follow the full chain only if `mode: full`; skip entirely if `mode: current`
 
 **Budget-gated:**
+- `extended_by` — a newer note extends this one. First read the link's `note` field: if it says the extending note's change is already reflected in this note (e.g. "correction applied inline here"), the newer note adds nothing this note doesn't already carry — **skip it** unless `mode: full`. Otherwise apply the one-sentence relevance test below; if it passes, load it and decrement budget by 1.
 - `relates_to`, `depends-on`, `implements`, `part-of` — apply the same one-sentence test from Phase 1: if you cannot state why the linked note directly addresses the query, skip it. If it passes, load it and decrement budget by 1. Stop when budget reaches 0.
 
 Never load the same note twice. Deduplicate by ID.

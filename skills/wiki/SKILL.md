@@ -26,7 +26,7 @@ Parse `$ARGUMENTS` for:
 
 **Resolve the content root** (highest precedence wins):
 1. `--out` flag, if given.
-2. A wiki path declared in your loaded project context (e.g. a line in CLAUDE.md / AGENTS.md / copilot-instructions like `nexis wiki: wiki/src (starlight)`). Use it if present.
+2. A wiki path declared in your loaded project context (e.g. a line in CLAUDE.md / AGENTS.md / copilot-instructions like `nexis wiki: wiki (starlight)`). Use it if present.
 3. On **sync**, the `output_root` recorded in the existing manifest (this is where the pages already live).
 4. Default: `.nexis/wiki`.
 
@@ -35,6 +35,27 @@ If an inline `--out` on sync differs from the manifest's `output_root`, treat it
 **Resolve the target** the same way (inline > context declaration > manifest > default `plain`).
 
 **Machine state always lives at `.nexis/wiki.manifest.md`** regardless of the content root, so it is never rendered by a doc site.
+
+## Step 1.5 — Bootstrap Starlight project (target: starlight only)
+
+Skip this step entirely when target is `plain`.
+
+When target is `starlight`, run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap-starlight.mjs" --root "<output_root>" --title "<title>" --description "<description>"
+```
+
+Derive `--title`/`--description` from the user's project (`package.json`'s `name`/`description` if present, else the `output_root` directory basename / empty string). This is a deterministic, offline scaffold — it never runs `npm install` and never shells out to `npm create astro`.
+
+Branch on the returned `status`:
+- `already_bootstrapped` → proceed; a Starlight project already lives at `output_root`.
+- `scaffolded` → proceed; a minimal Starlight project was just written. Remember to tell the user in the completion report that `npm install` must be run inside `output_root` before the site is servable.
+- `conflict` → **stop the entire run.** Report the returned `reason` (either a non-Starlight `astro.config.*` already there, or a non-empty directory with no `astro.config.*` at all — e.g. leftover `plain`-target output) and ask the user to pick a different `--out` or clear the directory. Do not proceed to Step 2.
+
+Define the **content root** used by every step below:
+- `plain` target → content root = `output_root`.
+- `starlight` target → content root = `output_root/<content_dir>` (the script returns `content_dir`, currently always `src/content/docs`, since Starlight's file-based routing fixes that path).
 
 ## Step 2 — Preconditions and mode detection
 
@@ -72,10 +93,14 @@ Produce the `note_id → slug` map for all active notes.
 
 ## B3 — Depth and build plan
 
+All paths below are relative to the **content root** resolved in Step 1.5 (`<root>` = content root, not necessarily `output_root` — see there for `starlight`).
+
 Decide depth (adaptive):
-- ≤ ~12 topics → **flat**: pages at `<root>/pages/<slug>.md`, landing at `<root>/index.md`.
-- \> ~12 topics → **section tier**: group topics into sections; pages at `<root>/<section-slug>/<slug>.md`, section landings at `<root>/<section-slug>/index.md`.
+- ≤ ~12 topics → **flat**: landing at `<root>/index.md`; pages at `<root>/pages/<slug>.md` for `plain`, or directly at `<root>/<slug>.md` for `starlight` (no extra `pages/` segment — the content root is already the dedicated `src/content/docs/` container).
+- \> ~12 topics → **section tier**: group topics into sections; pages at `<root>/<section-slug>/<slug>.md`, section landings at `<root>/<section-slug>/index.md` (same shape for both targets).
 - A single topic that still exceeds the page budget → the page-writer emits it as a mini-section (`.../<slug>/index.md` + sub-pages).
+
+Pages are always written as `.md` regardless of target — Starlight's asides don't require `.mdx`.
 
 Record a **build plan** — one row per planned page: `topic · slug · page path · assigned note-IDs`. This is the manifest-in-progress.
 
@@ -100,7 +125,7 @@ Any missing or failed page → re-spawn just that one `nexis:wiki-page` agent (i
 
 ## B6 — Home reduce + manifest
 
-Write the landing `<root>/index.md` from the returned topic **summaries** + cross-topic links only (no body re-reads): a project overview, a table of contents (sections → topics), and a "how the topics relate" map (a Mermaid graph is encouraged). If a section tier exists, also write each `<section-slug>/index.md`.
+Write the landing `<root>/index.md` (`<root>` = content root, per Step 1.5) from the returned topic **summaries** + cross-topic links only (no body re-reads): a project overview, a table of contents (sections → topics), and a "how the topics relate" map (a Mermaid graph is encouraged). If a section tier exists, also write each `<section-slug>/index.md`.
 
 Write `.nexis/wiki.manifest.md` (see **Manifest format** below).
 
@@ -144,7 +169,7 @@ Same as B5, over the dirty/new pages. Re-spawn any that failed.
 
 ## S6 — Home reduce + manifest
 
-Regenerate `<root>/index.md` (and any section landings) using **fresh summaries** from the writers that just ran + **cached summaries** from the manifest for untouched topics. Update `.nexis/wiki.manifest.md`: `last_synced`, fingerprints, note map, and any new/split topics.
+Regenerate `<root>/index.md` (`<root>` = content root, per Step 1.5) (and any section landings) using **fresh summaries** from the writers that just ran + **cached summaries** from the manifest for untouched topics. Update `.nexis/wiki.manifest.md`: `last_synced`, fingerprints, note map, and any new/split topics.
 
 **Report:** notes added / retired / removed, pages updated, topics created or split, section-tier changes, and a drift hint if warranted.
 
@@ -173,13 +198,31 @@ shard_threshold: 1500
 | 7f3a1c | auth | a1b2c3d4 |
 ```
 
-The `page` path is relative to `output_root`. The note map is the sole record of note→page provenance (pages carry no visible citations).
+For a `target: starlight` project, `output_root` names the Astro project root and `page` paths include the fixed content prefix, e.g.:
+
+```markdown
+---
+output_root: wiki
+target: starlight
+last_synced: <ISO8601>
+shard_threshold: 1500
+---
+
+## Topics
+| topic | slug | page | tags | summary |
+|-------|------|------|------|---------|
+| Authentication | auth | src/content/docs/auth.md | auth,jwt,cors | JWT/session model and the CORS-before-auth ordering rule |
+```
+
+The `page` path is always relative to `output_root` (for `starlight`, that means it includes the `src/content/docs/` prefix). The note map is the sole record of note→page provenance (pages carry no visible citations).
 
 ## Quality checklist
 
 Before the completion report, verify:
 - [ ] Content root and target were resolved by precedence and recorded in the manifest.
 - [ ] Machine state is at `.nexis/wiki.manifest.md`, not under a rendered content root.
+- [ ] For `target: starlight`, the bootstrap step ran and every page landed under `output_root/src/content/docs/`, never directly under `output_root`.
+- [ ] A bootstrap `conflict` halted the run rather than overwriting existing non-Starlight content.
 - [ ] Every slug is stable (unchanged for topics that already existed).
 - [ ] Every planned/dirty page passed reconcile (exists, covers its notes, links resolve).
 - [ ] The landing page and every section landing exist.

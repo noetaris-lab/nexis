@@ -90,13 +90,13 @@ The skill auto-detects whether to **build** (no wiki yet) or **sync** (increment
 
 ```
 /nexis:wiki
-/nexis:wiki --out wiki/src --target starlight
+/nexis:wiki --out wiki --target starlight
 /nexis:wiki --rebuild
 ```
 
 Flags:
-- `--out <path>` — content root for the generated pages (default: `.nexis/wiki/`)
-- `--target <plain|starlight>` — output flavor; `starlight` emits Astro Starlight syntax
+- `--out <path>` — content root for the generated pages (default: `.nexis/wiki/`); for `--target starlight` this is the Astro project root
+- `--target <plain|starlight>` — output flavor; `starlight` emits Astro Starlight syntax and, if `--out` isn't already a Starlight project, deterministically bootstraps a minimal one there first (offline, no `npm create astro`, no auto `npm install` — run that yourself once it's scaffolded)
 - `--rebuild` — discard the existing taxonomy and rebuild from scratch
 
 You can also declare the wiki path/target in your project context (e.g. a line in `CLAUDE.md`) instead of passing flags each time; inline flags take precedence.

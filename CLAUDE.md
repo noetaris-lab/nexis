@@ -18,7 +18,10 @@ nexis/
 │   └── survey-analyst.md        # Sonnet sub-agent (nexis:survey-analyst): per-unit codebase deep-dive → notes; may supersede its own unit's prior notes on a re-survey refresh
 ├── scripts/
 │   ├── doctor.mjs               # Deterministic validator + safe repairer used by /nexis:doctor
-│   └── survey-topology.mjs      # Deterministic git introspection used by /nexis:survey (repo detection, branch/commit lock, drift diffing)
+│   ├── survey-topology.mjs      # Deterministic git introspection used by /nexis:survey (repo detection, branch/commit lock, drift diffing)
+│   └── bootstrap-starlight.mjs  # Deterministic Astro Starlight project scaffold used by /nexis:wiki --target starlight
+├── templates/
+│   └── starlight/               # Bundled minimal Starlight project template (incl. astro-mermaid, so the Mermaid diagrams wiki-page.md emits actually render), copied + placeholder-patched by bootstrap-starlight.mjs
 ├── skills/
 │   ├── ingest/
 │   │   └── SKILL.md             # /nexis:ingest — distill conversation → atomic notes
@@ -168,6 +171,7 @@ Retrieval is split across two layers:
 | `/nexis:wiki` | Session model — prefer **Opus** | orchestrator: taxonomy derivation is the most reasoning-heavy step (skills inherit the session model, so this is a recommendation, not a hard-coded field) |
 | `wiki-scan.md` | Haiku | mechanical: index-shard tag stats and note→topic labeling |
 | `wiki-page.md` | Sonnet (Opus for highest-quality docs) | human-facing narrative synthesis + Mermaid + fidelity self-check |
+| `scripts/bootstrap-starlight.mjs` | None (deterministic Node) | copies + placeholder-patches a bundled minimal Starlight scaffold; offline, no `npm create astro`, no `npm install` |
 | `/nexis:doctor` | Session model — prefer **Sonnet/Opus** | orchestrator: runs the validator, then delegates Tier-3 propagation judgment |
 | `scripts/doctor.mjs` | None (deterministic Node) | Tier-1/2 detection + safe repair; free and exact, scales to any note count |
 | `reconcile.md` | Sonnet | judgment: is a note stale under a newer superseding/extending note, or under an archival? revise + stamp; shared by ingest + doctor + survey |
@@ -179,7 +183,7 @@ Retrieval is split across two layers:
 
 `/nexis:wiki` projects the atomic note **graph** into a human-readable **hierarchy** (overview → topics → detail). The wiki is a **machine-owned derived view** — notes stay the sole source of truth; pages are regenerated freely and never hand-edited. One skill auto-detects **Build** (no manifest) vs **Sync** (manifest exists); `--rebuild` forces a full rebuild.
 
-**Orchestrator (`/nexis:wiki`, Sonnet/Opus)** — never loads note bodies in bulk. It reasons over `index.md` rows, derives the topic taxonomy (iterative hypothesize → split/merge → freeze slugs), plans pages, delegates, reconciles, writes the landing page + manifest.
+**Orchestrator (`/nexis:wiki`, Sonnet/Opus)** — never loads note bodies in bulk. Before taxonomy work, for `target: starlight` it runs `scripts/bootstrap-starlight.mjs` to ensure the output root is a valid Starlight project — scaffolding one from a bundled template on first use, or refusing the whole run if the root is a conflicting non-Starlight directory. It then reasons over `index.md` rows, derives the topic taxonomy (iterative hypothesize → split/merge → freeze slugs), plans pages, delegates, reconciles, writes the landing page + manifest.
 
 **`wiki-scan.md` (Haiku)** — index-shard worker, active only above the shard threshold (default 1500 notes). `survey` mode returns tag stats/co-occurrence for taxonomy; `assign` mode labels notes given frozen topic definitions. Keeps the full index out of the orchestrator's context at scale.
 
@@ -189,7 +193,7 @@ Adaptive depth: flat (home + topic pages) up to ~12 topics, then a section tier 
 
 ## Wiki storage
 
-Human content is written to a **configurable content root** (precedence: inline `--out` > a path declared in the loaded project context, e.g. CLAUDE.md / AGENTS.md > the manifest's recorded root on sync > default `.nexis/wiki/`). Machine state lives at `.nexis/wiki.manifest.md` regardless, so a doc site (e.g. Starlight) never renders it. The manifest records `output_root`, `target`, `last_synced`, `shard_threshold`, the topic table (with cached summaries), and the note→page map with per-row fingerprints. Fingerprints (`status|title|tags|summary` hash) drive cheap index-vs-manifest delta detection on sync — added / changed / removed — without reading any note bodies. Provenance lives only in the manifest note map; pages carry no visible note references.
+Human content is written to a **configurable content root** (precedence: inline `--out` > a path declared in the loaded project context, e.g. CLAUDE.md / AGENTS.md > the manifest's recorded root on sync > default `.nexis/wiki/`). For `target: starlight`, `output_root` names the bootstrapped Astro project root, but pages actually land under `output_root/src/content/docs/` (Starlight's fixed file-based-routing path) — the manifest's `page` values include that prefix. Machine state lives at `.nexis/wiki.manifest.md` regardless, so a doc site (e.g. Starlight) never renders it. The manifest records `output_root`, `target`, `last_synced`, `shard_threshold`, the topic table (with cached summaries), and the note→page map with per-row fingerprints. Fingerprints (`status|title|tags|summary` hash) drive cheap index-vs-manifest delta detection on sync — added / changed / removed — without reading any note bodies. Provenance lives only in the manifest note map; pages carry no visible note references.
 
 ## Survey architecture
 
@@ -228,6 +232,6 @@ Safe `--fix` repairs are non-destructive: add missing back-links, correct `statu
 - **Ingest is autonomous**: ingest writes notes without prompting for user confirmation. The completion report tells the user what was created, superseded, or skipped.
 - **Wiki is autonomous**: `/nexis:wiki` builds or syncs without prompting; the completion report states what was created, updated, or reported as unassigned. It is `disable-model-invocation: true` (deliberate write op, like ingest).
 - **Survey is autonomous, checkpointed, and now incrementally re-surveyable**: `/nexis:survey` runs without prompting (`disable-model-invocation: true`); `--plan` previews the plan without writing, `--paths` scopes a trial run, `--depth quick|standard|deep` bounds per-unit cost, `--rebuild` discards any prior checkpoint and starts fresh on the current git state. Auto-detects **Build** (no manifest) / **Resume** (units still `pending`) / **Re-survey** (all `done`, git state has drifted since `last_surveyed_commit`) from `survey.manifest.md` plus a `survey-topology.mjs` scan. It **refuses** rather than guesses on: git not installed, no repo found, a legacy pre-re-survey manifest, a branch switch, rewritten history, or a dirty tree (any one repo failing a gate refuses the whole run in a multi-repo workspace). Survey only adds notes on a fresh Build; on re-survey an analyst may additionally supersede its *own* unit's stale prior notes (never another unit's or ingest's) and archive units whose code is gone, propagating both via `nexis:reconcile`. Analysts never write `index.md`; the orchestrator is the single index writer and never touches `last_ingested`.
-- **Wiki path/target override**: `/nexis:wiki` accepts `--out <path>`, `--target <plain|starlight>`, and `--rebuild`. Inline flags override any path/target declared in the loaded project context.
+- **Wiki path/target override**: `/nexis:wiki` accepts `--out <path>`, `--target <plain|starlight>`, and `--rebuild`. Inline flags override any path/target declared in the loaded project context. For `--target starlight`, the skill first runs `scripts/bootstrap-starlight.mjs` (deterministic, offline, no `npm create astro`/`npm install`) to scaffold a minimal Starlight project at `--out` if one isn't already there; a conflicting non-Starlight directory at `--out` halts the whole run rather than being overwritten.
 - **Immutability assumption**: wiki sync detects deltas from `index.md` because notes change only via new superseding notes + status patches, never in-place body edits. In-place body edits are out of scope; `--rebuild` covers them.
 - **Doctor is graduated and safe-by-default**: `/nexis:doctor` is report-only with no flags; `--fix` applies only safe deterministic Tier-1/2 repairs; `--fix-content` additionally revises stale referrers (Tier-3). It never deletes notes or history — destructive/judgment fixes are reported, not applied. It is `disable-model-invocation: true`. The deterministic layer is a shipped script (`scripts/doctor.mjs`) run via `node "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.mjs"`, not per-note model work, so it scales to any store size.

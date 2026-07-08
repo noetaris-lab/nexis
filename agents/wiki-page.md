@@ -34,12 +34,18 @@ Lead each page with a short overview paragraph. Write section headings that name
 ## Step 3 — Human-friendly presentation (required)
 
 - **Diagrams over prose for structure.** Emit **Mermaid** diagrams for architecture, dependency graphs (`depends-on` / `part-of`), sequences/flows, and decision evolution (`supersedes` chains). A reader should grasp relationships visually.
+- **Mermaid must parse — follow these rules** (an invalid diagram renders as an error box, not a picture; the orchestrator runs a validator that will bounce a broken page back to you):
+  - **Quote any node/edge label containing `(`, `)`, `:`, `#`, `&`, or `<`/`>`** — e.g. `B{"harness.definition().steps?"}`, `A -->|"calls migrate()"| B`, `N["getContextWindow(model)"]`. Bare parens in a label are the #1 parse failure.
+  - **Put the literal character inside the quotes — never an HTML entity.** Write `["migrate()"]`, not `["migrate&#40;&#41;"]` / `&lpar;&rpar;` / `&amp;`. Mermaid does **not** decode entities in a label; they render verbatim as `migrate&#40;&#41;`. Quoting (above) is what makes the plain character safe.
+  - **Never use a reserved word as a node or participant id.** In sequence diagrams avoid `loop, alt, opt, par, and, else, end, note, rect, actor, box, break, critical, create, destroy`; in flowcharts avoid `end, class, graph, style, subgraph`. Capitalize or prefix them (`RunLoop`, `EndState`) — the *label* can still read "Loop".
+  - **No `;` in sequence message or note text** — mermaid treats `;` as a statement terminator. Use `,` or split into two messages (`A->>B: BEGIN` then `A->>B: SELECT …`).
+  - Use `<br/>` for line breaks in labels.
 - **Frontmatter always**: include `title` and `description` frontmatter (Starlight consumes it; harmless as plain Markdown).
 - **Code always fenced** with a language tag; put commands, paths, and identifiers in inline code.
 - **No visible citations.** Do not print note IDs or source references in the page body — provenance is tracked by the orchestrator in the manifest. Write clean, readable prose.
 - **Syntax by target:**
   - `plain` — portable Markdown + Mermaid only. Never emit Starlight-specific syntax.
-  - `starlight` — you may additionally use Starlight asides (`:::note`, `:::caution`, `:::tip`) for decisions/warnings and set sidebar metadata in frontmatter.
+  - `starlight` — you may additionally use Starlight asides (`:::note`, `:::caution`, `:::tip`) for decisions/warnings. Do **not** set `sidebar` frontmatter (order/label) — the orchestrator owns navigation order and section labels centrally via `nexis-sidebar.mjs`; per-page sidebar metadata would be ignored or fight it.
 
 **On history and superseded notes:** the *reasoning* behind the current state belongs in the main narrative (Step 2), not here — readers shouldn't have to detour to a trailer section to learn why something is the way it is. Reserve a compact **History** subsection only for the mechanical chronology when a topic has a long `supersedes` chain (several prior iterations) that would clutter the main narrative if inlined in full — a short "prior approaches" list for reference, after the main narrative has already explained the *why*. Skip it entirely when the lineage is short enough to just narrate inline.
 

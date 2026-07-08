@@ -1,0 +1,93 @@
+/* nexis wiki — custom styles layered on top of Starlight.
+ *
+ * Owned by nexis:wiki (via the bundled Starlight template). Safe to tune the
+ * values below; the file itself is only rewritten by a full --rebuild.
+ *
+ * Two concerns:
+ *   1. Use more of a wide monitor — widen the content column and sidebars.
+ *   2. Make Mermaid diagrams zoomable (styles for the lightbox that
+ *      public/nexis-mermaid-zoom.js opens on click).
+ */
+
+/* ---- 1. Wider layout on large screens -------------------------------------
+ * Starlight defaults: --sl-content-width 45rem, --sl-sidebar-width 18.75rem.
+ * The right table-of-contents column width is also derived from
+ * --sl-sidebar-width, so bumping both reclaims the empty gutters a wide
+ * monitor otherwise leaves on either side of the prose. */
+:root {
+  --sl-content-width: 52rem;
+  --sl-sidebar-width: 20rem;
+}
+
+/* ---- 2. Mermaid diagrams: signal interactivity ---------------------------- */
+pre.mermaid[data-processed] {
+  cursor: zoom-in;
+}
+pre.mermaid[data-processed] svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---- Mermaid zoom lightbox (opened by public/nexis-mermaid-zoom.js) -------- */
+.nexis-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--sl-color-black, #000) 88%, transparent);
+  backdrop-filter: blur(2px);
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+/* Positioned at the overlay's top-left; JS drives translate()+scale() with a
+   top-left transform origin so the zoom-about-a-point math stays exact. */
+.nexis-zoom-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  cursor: grab;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.nexis-zoom-stage:active {
+  cursor: grabbing;
+}
+.nexis-zoom-stage svg {
+  /* let the diagram grow well past its inline size when zoomed */
+  max-width: none !important;
+  display: block;
+}
+.nexis-zoom-toolbar {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  gap: 0.4rem;
+}
+.nexis-zoom-toolbar button {
+  width: 2.4rem;
+  height: 2.4rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  border: 1px solid var(--sl-color-gray-4, #888);
+  border-radius: 0.4rem;
+  background: var(--sl-color-gray-6, #1c1f24);
+  color: var(--sl-color-white, #fff);
+  cursor: pointer;
+}
+.nexis-zoom-toolbar button:hover {
+  background: var(--sl-color-gray-5, #2a2e35);
+}
+.nexis-zoom-hint {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  color: var(--sl-color-gray-2, #ccc);
+  background: color-mix(in srgb, var(--sl-color-black, #000) 60%, transparent);
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.4rem;
+}

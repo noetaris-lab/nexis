@@ -80,24 +80,24 @@ Note the **shard threshold** (default `1500` notes; overridable via the manifest
 Then run the **iterative structuring loop** (index/stats only; peek at a *sample* of full note bodies only to disambiguate):
 1. **Hypothesize** candidate topics from tags/titles/summaries/types, each with an assigned set of note IDs and a rough cohesion estimate.
 2. **Validate** each candidate:
-   - too large (> ~30 notes / exceeds a readable page) → peek at a sample, then split.
+   - too large or spans multiple distinct sub-themes → peek at a sample and judge on readability and cohesion, then split. ~30 notes is a rough signal that a topic may be crowding a single page, not a hard cutoff — a tightly cohesive topic can run longer, a sprawling one should split sooner.
    - singleton or too thin → merge into its nearest neighbor.
    - a note whose tags straddle two topics → peek at that one body to place it.
-3. **Converge** when every topic is cohesive and page-sized. **Freeze the slug for each topic** (kebab-case of the topic name, unique). Slugs must stay stable across future syncs.
+3. **Converge** when every topic is cohesive and page-sized. **Freeze the slug for each topic** (kebab-case of the topic name, unique) and a short one-line **theme description** capturing what binds it. Slugs must stay stable across future syncs. The theme description feeds B2 (a semantic anchor for `nexis:wiki-scan` assign-mode workers) and B4 (steer for the page writer).
 
 ## B2 — Assignment
 
 Produce the `note_id → slug` map for all active notes.
 - Below threshold: assign inline.
-- At/above threshold: spawn `nexis:wiki-scan` in **assign** mode (task message: `mode: assign` + the frozen `topic → tags` definitions + the slice). Each returns compact `id,slug` pairs. Collect them.
+- At/above threshold: spawn `nexis:wiki-scan` in **assign** mode (task message: `mode: assign` + the frozen `topic → tags` definitions, each with its one-line **theme description** + the slice). Each returns compact `id,slug` pairs. Collect them.
 
 ## B3 — Depth and build plan
 
 All paths below are relative to the **content root** resolved in Step 1.5 (`<root>` = content root, not necessarily `output_root` — see there for `starlight`).
 
-Decide depth (adaptive):
-- ≤ ~12 topics → **flat**: landing at `<root>/index.md`; pages at `<root>/pages/<slug>.md` for `plain`, or directly at `<root>/<slug>.md` for `starlight` (no extra `pages/` segment — the content root is already the dedicated `src/content/docs/` container).
-- \> ~12 topics → **section tier**: group topics into sections; pages at `<root>/<section-slug>/<slug>.md`, section landings at `<root>/<section-slug>/index.md` (same shape for both targets).
+Decide depth by reasoning about **navigability**, not by checking the topic count against a fixed cap. ~12 topics is a rough point past which a flat table of contents typically stops being scannable — but let cohesion and how the topics relate drive the actual call: a well-clustered 16 topics can stay flat, while a sprawling 8 spanning unrelated domains may already want sections.
+- **Flat** (the topic set reads as one coherent list): landing at `<root>/index.md`; pages at `<root>/pages/<slug>.md` for `plain`, or directly at `<root>/<slug>.md` for `starlight` (no extra `pages/` segment — the content root is already the dedicated `src/content/docs/` container).
+- **Section tier** (a flat list would overwhelm a reader): group topics into sections by reasoning over how they relate (never just alphabetically or by splitting the count in half); pages at `<root>/<section-slug>/<slug>.md`, section landings at `<root>/<section-slug>/index.md` (same shape for both targets).
 - A single topic that still exceeds the page budget → the page-writer emits it as a mini-section (`.../<slug>/index.md` + sub-pages).
 
 Pages are always written as `.md` regardless of target — Starlight's asides don't require `.mdx`.
@@ -108,6 +108,7 @@ Record a **build plan** — one row per planned page: `topic · slug · page pat
 
 For each topic, spawn a `nexis:wiki-page` agent (these run in parallel — spawn them together). Pass in the task message:
 - topic name, slug, resolved **absolute page path**
+- the topic's one-line **theme description** (from B1) — steer for how to frame and structure the page, not just a note dump
 - the topic's assigned note IDs
 - resolved `target` (`plain` or `starlight`)
 - the page budget (split into a mini-section if exceeded)
@@ -125,7 +126,15 @@ Any missing or failed page → re-spawn just that one `nexis:wiki-page` agent (i
 
 ## B6 — Home reduce + manifest
 
-Write the landing `<root>/index.md` (`<root>` = content root, per Step 1.5) from the returned topic **summaries** + cross-topic links only (no body re-reads): a project overview, a table of contents (sections → topics), and a "how the topics relate" map (a Mermaid graph is encouraged). If a section tier exists, also write each `<section-slug>/index.md`.
+Write the landing `<root>/index.md` (`<root>` = content root, per Step 1.5) from the returned topic **summaries** + cross-topic links only (no body re-reads). Keep it a short, orienting entry point — not an exhaustive reference:
+- a project overview,
+- a brief **how to read this wiki** guide (how topics/sections are organized, where to start),
+- **flat depth** — the topic list can live directly on the landing page (by definition it's still short); on top of it, only if the relationship graph would stay legibly small, add a "how the topics relate" Mermaid map. A skipped diagram is not a shortfall — a diagram dense enough to need squinting at is worse than no diagram, so skip rather than force one.
+- **section tier** — list sections with a one-line blurb and a link to each section landing. Do **not** inline the full per-topic table here, and do **not** attempt a whole-graph Mermaid diagram at this scale — both stop being readable once there are many topics and add no value. Link instead to the dedicated topic index page below.
+
+**Dedicated topic index page** (write only in section tier — a flat-depth wiki's landing list already covers this, so skip it there): `<root>/all-topics.md`, one comprehensive table of every topic grouped by section (`section | topic | slug | one-line summary`). This is where the exhaustive list lives; the landing page stays short regardless of how many topics exist.
+
+If a section tier exists, also write each `<section-slug>/index.md` (section overview + its topic list).
 
 Write `.nexis/wiki.manifest.md` (see **Manifest format** below).
 
@@ -148,14 +157,14 @@ If all three sets are empty → report "wiki is up to date," bump `last_synced`,
 
 - **retired / removed** → its topic (from the map); mark that page **dirty**.
 - **changed (edited)** → mark its current page dirty; if its tags moved it out of that topic, treat as a reassignment.
-- **added** → assign by tag overlap to an existing topic (mark dirty), else drop into an **unhomed pool**. If the added batch exceeds the shard threshold, reuse `nexis:wiki-scan` (assign mode) with the existing topic definitions.
+- **added** → assign by thematic fit against each existing topic's tags and theme description (mark dirty), else drop into an **unhomed pool**. If the added batch exceeds the shard threshold, reuse `nexis:wiki-scan` (assign mode) with the existing topic definitions.
 
 ## S3 — Conservative restructure
 
 Preserve existing slugs (human bookmarks + small diffs). Only:
 - spawn a **new topic/page** when the unhomed pool coheres into a clear new theme,
 - **split** a topic that has grown past the page budget into a mini-section,
-- **adjust the section tier** if the topic count crosses ~12.
+- **adjust the section tier** if the topic set has grown enough that a flat list stops reading as scannable (see B3's navigability judgment, not a fixed count).
 
 Do **not** silently re-cluster, rename, or move notes between existing topics. When accumulated drift is large, add a **drift hint** to the report suggesting `/nexis:wiki --rebuild`.
 
@@ -169,7 +178,7 @@ Same as B5, over the dirty/new pages. Re-spawn any that failed.
 
 ## S6 — Home reduce + manifest
 
-Regenerate `<root>/index.md` (`<root>` = content root, per Step 1.5) (and any section landings) using **fresh summaries** from the writers that just ran + **cached summaries** from the manifest for untouched topics. Update `.nexis/wiki.manifest.md`: `last_synced`, fingerprints, note map, and any new/split topics.
+Regenerate `<root>/index.md` (`<root>` = content root, per Step 1.5) — and any section landings, and the dedicated `all-topics.md` if section tier is active — using **fresh summaries** from the writers that just ran + **cached summaries** from the manifest for untouched topics. Same shape as B6: a short orienting landing (diagram only if it would stay legible), the exhaustive table only on `all-topics.md` once in section tier. If this sync is what tips the wiki from flat into section tier, create `all-topics.md` now. Update `.nexis/wiki.manifest.md`: `last_synced`, fingerprints, note map, `depth`, and any new/split topics.
 
 **Report:** notes added / retired / removed, pages updated, topics created or split, section-tier changes, and a drift hint if warranted.
 
@@ -185,6 +194,7 @@ output_root: .nexis/wiki
 target: plain
 last_synced: <ISO8601>
 shard_threshold: 1500
+depth: flat
 ---
 
 ## Topics
@@ -198,6 +208,8 @@ shard_threshold: 1500
 | 7f3a1c | auth | a1b2c3d4 |
 ```
 
+`depth` is `flat` or `sectioned`, set whenever B3/S3 decide the tier — it lets sync know without re-deriving whether `all-topics.md` should exist and whether the landing page should carry the full table or a short section list. The cached `summary` column doubles as each topic's theme description once B6 has run once — reuse it (alongside `tags`) for S2/S3 reassignment reasoning and for any `nexis:wiki-scan` assign-mode reuse on sync. No separate field is persisted for it. In `sectioned` depth, the section a topic belongs to is derived from its `page` path prefix (`<section-slug>/...`) rather than a dedicated column.
+
 For a `target: starlight` project, `output_root` names the Astro project root and `page` paths include the fixed content prefix, e.g.:
 
 ```markdown
@@ -206,6 +218,7 @@ output_root: wiki
 target: starlight
 last_synced: <ISO8601>
 shard_threshold: 1500
+depth: flat
 ---
 
 ## Topics
@@ -226,5 +239,7 @@ Before the completion report, verify:
 - [ ] Every slug is stable (unchanged for topics that already existed).
 - [ ] Every planned/dirty page passed reconcile (exists, covers its notes, links resolve).
 - [ ] The landing page and every section landing exist.
+- [ ] The landing page stayed short — no exhaustive full-topic table and no dense relationship diagram once in section tier; both live only if warranted (table on `all-topics.md`, diagram only when it stays legible).
+- [ ] Pages don't repeat the same three-heading skeleton verbatim across every topic — each page's structure was actually planned from its own notes, and decision/problem reasoning (the *why*) is woven into the narrative, not confined to an optional trailing History section.
 - [ ] No orphan "Miscellaneous" page was created; unassigned notes are reported instead.
 - [ ] The manifest note map covers exactly the active notes represented in the wiki.

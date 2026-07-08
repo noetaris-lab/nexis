@@ -28,7 +28,12 @@ Keep it compact — histogram and co-occurrence only, no prose commentary beyond
 
 ## Mode: assign
 
-The task message includes frozen **topic definitions** as `slug → tag set`. For each row in your slice, pick the single best-matching topic by tag overlap (most shared tags wins; break ties by the more specific / smaller topic). If a row matches no topic's tags at all, label it `UNHOMED`.
+The task message includes frozen **topic definitions** as `slug → tag set`, each with a one-line **theme description**. For each row in your slice, pick the single best-matching topic:
+1. Start with tag overlap (most shared tags wins).
+2. If overlap is weak, zero, or tied between topics, judge the row's `title` and `summary` against each candidate topic's theme description — a note can belong on thematic fit even without a strong tag match.
+3. Break any remaining tie by the more specific / smaller topic.
+
+Label a row `UNHOMED` only if no topic is a reasonable fit by either signal — not merely because tags didn't overlap.
 
 Return only:
 

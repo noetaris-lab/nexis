@@ -23,6 +23,7 @@ Parse `$ARGUMENTS` for:
 - `--out <path>` — explicit wiki content root
 - `--target <plain|starlight>` — output flavor
 - `--rebuild` — discard existing taxonomy and rebuild from scratch
+- `--reorder "<instruction>"` — reposition existing topics/sections (e.g. `--reorder "move Deployment above Authentication"`) without touching note content or page bodies. Requires an existing manifest (nothing to reorder on a first build) and is meaningless together with `--rebuild` (a rebuild re-derives structure from scratch, so `--rebuild` wins and `--reorder` is ignored). See S3.
 
 **Resolve the content root** (highest precedence wins):
 1. `--out` flag, if given.
@@ -64,6 +65,8 @@ Read `.nexis/index.md`. If it does not exist or has no note rows, stop and tell 
 Determine mode:
 - `--rebuild` given, **or** no `.nexis/wiki.manifest.md` exists → **Build path**.
 - Manifest exists → **Sync path**.
+
+If `--reorder` was given but no manifest exists (and `--rebuild` wasn't also given), stop and tell the user to build the wiki first — there is no existing topic order to rearrange.
 
 Note the **shard threshold** (default `1500` notes; overridable via the manifest's `shard_threshold`). Below it, do taxonomy work by reading `index.md` directly. At or above it, delegate index scanning to `nexis:wiki-scan`.
 
@@ -203,6 +206,7 @@ Preserve existing slugs (human bookmarks + small diffs). Only:
 - spawn a **new topic/page** when the unhomed pool coheres into a clear new theme,
 - **split** a topic that has grown past the page budget into a mini-section,
 - **adjust the section tier** if the topic set has grown enough that a flat list stops reading as scannable (see B3's navigability judgment, not a fixed count).
+- if `--reorder "<instruction>"` was given, apply it to the Topics table row order (and section grouping, if sectioned) as a **pure permutation** — never adding, dropping, or renaming a topic in the process. This makes no topic dirty, so it never triggers S4 page regeneration; S6 picks up the new order automatically when it rewrites the landing list, `all-topics.md`, and (for `starlight`) `nexis-sidebar.mjs` from the manifest table. If the instruction names a topic/section that doesn't match anything in the current table, or would leave existing topics unplaced, stop and ask for clarification rather than guessing.
 
 Do **not** silently re-cluster, rename, or move notes between existing topics. When accumulated drift is large, add a **drift hint** to the report suggesting `/nexis:wiki --rebuild`.
 
@@ -224,7 +228,7 @@ Regenerate `<root>/index.md` (`<root>` = content root, per Step 1.5) — and any
 
 For `target: starlight`, also rewrite `<output_root>/nexis-sidebar.mjs` per **B7** to reflect any added / split / removed topics and section-tier changes (preserve slug order for untouched topics).
 
-**Report:** notes added / retired / removed, pages updated, topics created or split, section-tier changes, and a drift hint if warranted.
+**Report:** notes added / retired / removed, pages updated, topics created or split, section-tier changes, any reorder applied, and a drift hint if warranted.
 
 ---
 
@@ -288,4 +292,5 @@ Before the completion report, verify:
 - [ ] The landing page stayed short — no exhaustive full-topic table and no dense relationship diagram once in section tier; both live only if warranted (table on `all-topics.md`, diagram only when it stays legible).
 - [ ] Pages don't repeat the same three-heading skeleton verbatim across every topic — each page's structure was actually planned from its own notes, and decision/problem reasoning (the *why*) is woven into the narrative, not confined to an optional trailing History section.
 - [ ] No orphan "Miscellaneous" page was created; unassigned notes are reported instead.
+- [ ] If `--reorder` was given, the resulting Topics table order is a pure permutation (no topic added/dropped/renamed) and no page bodies were regenerated because of it.
 - [ ] The manifest note map covers exactly the active notes represented in the wiki.

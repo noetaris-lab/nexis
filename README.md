@@ -4,7 +4,7 @@
 
 A Claude Code plugin for capturing and retrieving project knowledge using the ZettelKasten method.
 
-Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. On an existing codebase, `/nexis:survey` bootstraps the note store directly from the code. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki, and `/nexis:doctor` health-checks and repairs the note store.
+Run a brainstorming or design session with Claude, then `/nexis:ingest` to distill it into atomic, linked notes. On an existing codebase, `/nexis:survey` bootstraps the note store directly from the code. Later, `/nexis:recall` surfaces relevant notes as context before you start new work, `/nexis:wiki` projects the same notes into a human-readable onboarding wiki (with `/nexis:wiki-translate` to localize it into other languages), and `/nexis:doctor` health-checks and repairs the note store.
 
 ## Installation
 
@@ -92,14 +92,37 @@ The skill auto-detects whether to **build** (no wiki yet) or **sync** (increment
 /nexis:wiki
 /nexis:wiki --out wiki --target starlight
 /nexis:wiki --rebuild
+/nexis:wiki --reorder "move Deployment above Authentication"
 ```
 
 Flags:
 - `--out <path>` — content root for the generated pages (default: `.nexis/wiki/`); for `--target starlight` this is the Astro project root
 - `--target <plain|starlight>` — output flavor; `starlight` emits Astro Starlight syntax and, if `--out` isn't already a Starlight project, deterministically bootstraps a minimal one there first (offline, no `npm create astro`, no auto `npm install` — run that yourself once it's scaffolded)
 - `--rebuild` — discard the existing taxonomy and rebuild from scratch
+- `--reorder "<instruction>"` — reposition existing topics/sections on a sync without touching note content, page bodies, or slugs (a pure permutation); requires an existing wiki and is ignored if combined with `--rebuild`
 
 You can also declare the wiki path/target in your project context (e.g. a line in `CLAUDE.md`) instead of passing flags each time; inline flags take precedence.
+
+### `/nexis:wiki-translate --lang <code>`
+
+Translates a built Starlight wiki into another language — a native bilingual rewrite, not a literal machine translation. It's a further derived view of the wiki (which is itself derived from the notes), so it only works with `/nexis:wiki --target starlight`; the `plain` target has no i18n mechanism to hook into. One locale per invocation.
+
+The first time you translate into a given locale, it asks (once) how to handle **terminology** (translate / keep-with-gloss / keep-original) and **diagrams** (translate Mermaid labels / keep original); the answer is remembered and reused on every later sync. Re-running after a `/nexis:wiki` sync retranslates only the pages that actually changed.
+
+```
+/nexis:wiki-translate --lang es
+/nexis:wiki-translate --lang ja --label "日本語" --terms gloss --diagrams keep
+/nexis:wiki-translate --lang es --rebuild-locale
+```
+
+Flags:
+- `--lang <code>` — required; target locale code (e.g. `es`, `fr`, `ja`)
+- `--label "<Native name>"` — native-language display name; inferred from the code if omitted
+- `--terms <translate|gloss|keep>` — terminology policy override
+- `--diagrams <translate|keep>` — diagram-label policy override
+- `--rebuild-locale` — force a full retranslation of this locale, ignoring change detection
+
+Navigation chrome (sidebar labels, prev/next captions) stays in the default language in v1 — Starlight's i18n fallback renders it automatically, so the site still works, it just isn't fully localized.
 
 ### `/nexis:doctor`
 
@@ -108,7 +131,7 @@ Health-checks the note store and repairs it. A deterministic validator scans eve
 ```
 /nexis:doctor                 # report only — scan and list defects, write nothing
 /nexis:doctor --fix           # also apply safe repairs
-/nexis:doctor --fix-content   # also revise notes left stale by a supersession
+/nexis:doctor --fix-content   # also revise notes left stale by a supersession or extension
 ```
 
 What it checks:
@@ -116,11 +139,11 @@ What it checks:
 - **Schema** — required fields, valid `type`/`status`, tag count/format, ISO8601 timestamps, `id` matches filename, no duplicate ids
 - **Graph** — valid `rel` types, no dangling or self links, correct `decided-by`/`motivated-by` targets, supersede back-link symmetry, `status`/`superseded_by` consistency, no supersede cycles
 - **Index** — every note has a row and vice versa, and rows match note frontmatter
-- **Propagation debt** — active notes still asserting content derived from a note that was later superseded but never revised
+- **Propagation debt** — active notes still asserting content derived from a note that was later superseded, or that extended one of them and may have changed a fact it embeds
 
 What `--fix` repairs automatically (all non-destructive): missing back-links, `status`/`superseded_by` mismatches, tag normalization, and index reconciliation (existing summaries preserved). Everything else — dangling links, cycles, `id`/filename mismatches — is reported as a manual TODO.
 
-`--fix-content` additionally reviews each propagation-debt candidate and, only where the content is genuinely outdated, revises the note, appends an `*Updated: <timestamp>*` marker (preserving history), and records that the referenced note was superseded. This is the same reconciliation ingest performs going forward, applied retroactively to your existing notes.
+`--fix-content` additionally reviews each propagation-debt candidate — both notes still referring to a now-superseded note and notes extended by a newer one — and, only where the content is genuinely outdated, revises the note, appends an `*Updated: <timestamp>*` marker (preserving history), and annotates the link. This is the same reconciliation ingest performs going forward, applied retroactively to your existing notes.
 
 Notes are the single source of truth; the doctor treats them as such and prefers reporting over silent change.
 
@@ -167,6 +190,7 @@ fix is to register the CORS middleware first in the chain.
 | `supersedes` | this note replaces the linked note |
 | `superseded_by` | back-link on the older note (written automatically) |
 | `extends` | adds detail without replacing |
+| `extended_by` | back-link on the extended note (written automatically) |
 | `relates_to` | semantic neighbor — related but distinct |
 | `contradicts` | records a disagreement or alternative decision |
 | `depends-on` | this concept requires the target to function correctly |
@@ -198,6 +222,7 @@ Notes live in `.nexis/` at the root of your project — not inside the plugin di
     ├── wiki/                 # generated wiki pages (configurable via --out)
     │   └── ...
     ├── wiki.manifest.md      # machine state for wiki sync (never rendered)
+    ├── wiki-translate.manifest.md  # machine state for wiki-translate (per-locale policy + sync)
     └── survey.manifest.md    # machine state for codebase survey (unit plan + resume checkpoint)
 ```
 

@@ -1,7 +1,6 @@
 ---
 name: wiki-page
 description: Internal per-topic page writer for nexis:wiki. Loads one topic's notes, writes a human-friendly wiki page (or mini-section), self-checks fidelity against the notes, and returns a compact result manifest. Not for direct use — spawned by /nexis:wiki.
-model: sonnet
 tools: Read, Write
 ---
 
@@ -33,7 +32,8 @@ Lead each page with a short overview paragraph. Write section headings that name
 
 ## Step 3 — Human-friendly presentation (required)
 
-- **Diagrams over prose for structure.** Emit **Mermaid** diagrams for architecture, dependency graphs (`depends-on` / `part-of`), sequences/flows, and decision evolution (`supersedes` chains). A reader should grasp relationships visually.
+- **Reach for diagrams — they are the wiki's edge over prose.** Whenever a relationship would be clearer *seen* than read, draw it: **Mermaid** for architecture, dependency graphs (`depends-on` / `part-of`), sequences/flows, and decision evolution (`supersedes` chains). Lean toward visualizing rather than describing structure — a page that could have shown a diagram and didn't is a missed opportunity. How many, and of what kind, is your call from the topic's actual shape (not a quota) — but treat "could this be a diagram?" as a question worth asking at every structural moment, and default to yes when a reader would grasp it faster that way.
+- **Don't hold back for fear of a syntax slip.** The orchestrator runs a validator that auto-fixes the common mistakes and only bounces a page back on a genuinely unparseable diagram — so favor drawing the diagram and following the rules below, never skipping it to play safe.
 - **Mermaid must parse — follow these rules** (an invalid diagram renders as an error box, not a picture; the orchestrator runs a validator that will bounce a broken page back to you):
   - **Quote any node/edge label containing `(`, `)`, `:`, `#`, `&`, or `<`/`>`** — e.g. `B{"harness.definition().steps?"}`, `A -->|"calls migrate()"| B`, `N["getContextWindow(model)"]`. Bare parens in a label are the #1 parse failure.
   - **Put the literal character inside the quotes — never an HTML entity.** Write `["migrate()"]`, not `["migrate&#40;&#41;"]` / `&lpar;&rpar;` / `&amp;`. Mermaid does **not** decode entities in a label; they render verbatim as `migrate&#40;&#41;`. Quoting (above) is what makes the plain character safe.

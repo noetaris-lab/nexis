@@ -212,4 +212,57 @@ Before writing the completion report, verify each note created or patched in thi
 
 ## Completion report
 
-When done, report: how many notes were created, how many existing notes were superseded, how many existing notes were extended, how many notes were revised by reconcile to propagate a change (supersession or extension), and how many candidates were skipped as duplicates.
+Structure the report so the user can verify *what* was captured, not just how
+much. The orchestrator already holds every note it wrote or patched this
+session, so listing them is nearly free in tokens — never make the user open
+`index.md` to find out what happened.
+
+Open with a one-line summary of counts (created / superseded / extended /
+reconciled / skipped), then present a **table of every affected note**,
+including the new ones. Omit any trailing section that is empty.
+
+### Affected notes
+
+One row per note created or changed this session. Ids are written as
+`` `<id>` `` so they resolve to `.nexis/notes/<id>.md`.
+
+| id | type | title | action | detail |
+|----|------|-------|--------|--------|
+| `<id>` | `<type>` | `<title>` | created \| superseded \| extended \| reconciled | see below |
+
+- **created** — a new note. `detail`: any outbound link that isn't obvious,
+  e.g. `supersedes 9d8e7f`, `extends abc123`, `contradicts def456`.
+- **superseded** — an existing note whose `status` flipped to `superseded`.
+  `detail`: `replaced by <new-id>`.
+- **extended** — an existing note that gained an `extended_by` back-link.
+  `detail`: `by <new-id> — <what it added>`.
+- **reconciled** — an existing note whose *body* the `nexis:reconcile` agent
+  revised to stay consistent. `detail`: the one-line reason from the agent's
+  result manifest. A note that was both extended and body-revised shows action
+  `extended` with the revision reason folded into `detail`.
+
+### Skipped candidates
+
+Distilled candidates that were **not** written, so they have no id — list them
+separately, each with its reason (e.g. "already covered by note `def456`").
+This proves nothing was silently dropped and lets the user challenge a wrong
+skip.
+
+### Attention
+
+Call out the least-obvious side effects so the user can review them:
+- **reconciled** notes — these are automated edits to *existing* knowledge.
+- any `contradicts` link recorded this session — a captured disagreement.
+
+Omit this section if there is nothing to flag.
+
+### Nothing captured
+
+If no notes were created, say so and why (all conversation after
+`last_ingested` was already ingested / no durable, settled decisions in scope)
+rather than reporting a table of zeros.
+
+### Next step
+
+If `.nexis/wiki.manifest.md` exists, close with a nudge to run `/nexis:wiki` to
+sync the wiki against the notes just written.

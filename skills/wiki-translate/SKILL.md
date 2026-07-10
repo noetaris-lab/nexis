@@ -112,6 +112,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/mermaid-lint.mjs" --root "<content_root>" --
 
 (`content_root` = `output_root/src/content/docs`.) For any diagram still reported invalid, re-spawn that page's `nexis:wiki-translate-page` agent with the specific parse error. Do not proceed until the validator reports zero remaining.
 
+## Step 6.5 — Validate internal links (required)
+
+Root-relative internal links (e.g. `/foundation/core`) written by `wiki-page.md`/`wiki-translate-page.md` are deliberately left untouched by the translator — link *targets* are not a translation concern (see that agent's Step 3/5) — so a link copied verbatim from the source page still points at the default locale's route unless something rewrites it. This step is that rewrite, plus a general broken-link check, run once after all of this sync's pages (and any re-spawns from Step 6) are in place:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/link-lint.mjs" --content-root "<content_root>" --locales-file "<output_root>/nexis-locales.mjs" --lang "<code>" --fix --json
+```
+
+This only ever rewrites the one **mechanical, always-safe** case — an internal link missing this locale's prefix — by inserting `/<code>` after the leading slash. Everything else it finds is reported, not guessed at, since a script can't know the intended correct target:
+- a link already prefixed with `/<code>/` but pointing at a route that doesn't exist,
+- a link into a *different* locale's subtree,
+- a link that doesn't resolve to any known page even unprefixed — almost always a **pre-existing defect in the base wiki itself** (the translator left the target untouched, so if it's broken here it was already broken in the source page). Don't re-spawn a translator over this; a re-spawn can't fix a source-page defect. Carry it into the completion report instead, so the user can address it via `/nexis:wiki` on the base wiki.
+
+External URLs, same-page anchors, relative links, and static-asset links (images, scripts, styles) are left alone — relative links between mirrored pages stay correct on their own since the whole subtree shifted uniformly under `/<code>/`.
+
 ## Step 7 — Commit manifest state
 
 Now that translation succeeded, write `.nexis/wiki-translate.manifest.md`:
@@ -147,4 +162,4 @@ Now that translation succeeded, write `.nexis/wiki-translate.manifest.md`:
 
 ## Completion report
 
-Report: locale (code + label), the resolved terms/diagrams policy (and whether it changed from a prior run), pages created / updated / removed, and confirmation that the Mermaid gate passed with zero remaining.
+Report: locale (code + label), the resolved terms/diagrams policy (and whether it changed from a prior run), pages created / updated / removed, confirmation that the Mermaid gate passed with zero remaining, and the link-lint outcome — how many locale-prefix links were auto-fixed, plus any flagged broken/cross-locale links (called out as likely pre-existing base-wiki defects, not something this run caused).

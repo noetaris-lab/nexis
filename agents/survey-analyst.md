@@ -10,7 +10,7 @@ You analyze **one unit** of a codebase for the nexis note system and distill wha
 ## Input (from the task message)
 
 - **slug**, **paths**, **role hypothesis**, **hotspot files** for your unit
-- **depth budget**: max files to read and max notes to write
+- **effort budget**: max files to read and max notes to write
 - **system note id** — the project-level entity note (your unit entity links `part-of` to it)
 - the **unit list** (all units' slugs + roles) — for reporting cross-unit dependencies *by slug*
 - optionally: the **accumulated note manifest** (notes already created this survey: `id | title | type | tags`) and **existing index rows** overlapping your unit (from prior `/nexis:ingest` runs)

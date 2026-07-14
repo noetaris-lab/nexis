@@ -38,19 +38,35 @@ It scales to large repos by never reading the codebase in one context: a determi
 
 Survey checkpoints a fresh build, and on a later invocation **incrementally re-surveys**: it diffs the current git state against the commit last surveyed and re-analyzes only what changed. On a fresh build it only *adds* notes — a code contradiction with a prior note is recorded as a `contradicts` note, never edited or superseded. On a re-survey, an analyst may additionally supersede its *own* unit's stale prior notes (never another unit's or ingest's) and archive units whose code has disappeared, propagating both to referrers. Because drift detection is git-based, survey locks each repo to a branch at first survey and refuses rather than guesses on anything that would make that lineage untrustworthy — git missing, no repo found, a branch switch, rewritten history, or a dirty working tree.
 
+#### Mining the history: `--history`
+
+Reading code tells you what a system *is*. It cannot tell you what was **tried and abandoned** — the library that was adopted and then ripped out, the approach that was reverted, the subsystem that was deleted. That knowledge exists only in the git log, and it decays as the people who remember it leave.
+
+`--history` recovers it. A deterministic scanner walks the log and keeps only the commits that structurally look like decisions (reverts, dependency additions and removals, subsystem deletions, breaking changes, and commit messages whose author wrote unusually much *for this project*). Measured across axios, express and redis, that filter keeps **3–6% of commits**. A cheap model triages those down to the best few dozen; a reasoning model reads only those, from size-capped evidence packs, and distills the decisions into notes.
+
+Two rules keep it honest. It **never fabricates a rationale** — if neither the commit message nor the change makes the reason recoverable, the commit is skipped and the skip is reported, because an invented motive is indistinguishable from fact to every future reader. And it writes **one note per decision, asserting the present**, with the abandoned alternative narrated in the body and cited by SHA — no synthetic chain of historical notes for states that were never recorded. Reverts are the exception: a failed approach earns its own `problem` note, since its whole value is stopping the next person from re-attempting it.
+
+The cost amortizes. The manifest records how far each repo has been mined, so the expensive archaeology happens once and every later run mines only what's new. Mining a 13k-commit repo end to end measured well under 100k tokens.
+
 ```
 /nexis:survey                          # build (or resume, auto-detected)
 /nexis:survey --plan                   # print the unit plan and cost estimate, write nothing
 /nexis:survey --paths services/auth    # trial run scoped to a subtree
-/nexis:survey --depth quick            # cheaper first pass
+/nexis:survey --effort quick           # cheaper first pass
+/nexis:survey --history                # also mine the whole git history for decisions
+/nexis:survey --history v2.0.0         # ...bounded to a tag, SHA, or "18 months ago"
 /nexis:survey --rebuild                # discard any prior checkpoint, start over
 ```
 
 Flags:
-- `--plan` — partition only; show units and estimated agent count, then stop
+- `--plan` — partition only; show units, estimated agent count, and (with `--history`) what mining would cost, then stop
 - `--paths <dir>` — restrict the survey to a subtree
-- `--depth <quick|standard|deep>` — per-unit reading/note budget (default `standard`)
+- `--effort <quick|standard|deep>` — budget dial: how much each analyst reads and writes, and how many commits history mining distills (default `standard`)
+- `--history [<since>]` — also mine the git log for decisions. The optional bound is a git ref (`v2.0.0`, a SHA) or a git date expression (`"18 months ago"`); bare means the whole history. In a multi-repo workspace a **date expression is the form that generalizes** — a tag is meaningless in a sibling repo that never carried it, and survey refuses rather than guessing.
+- `--no-history` — skip mining for this run. Mining is *sticky*: once a store has been mined, later re-surveys keep it current automatically, so this is the opt-out.
 - `--rebuild` — discard any prior survey checkpoint and start fresh
+
+Even without `--history`, the scan runs anyway (it costs no model tokens) and the completion report tells you the yield — *"312 high-signal commits detected, 18 of them reverts"* — so you can see what you'd get before paying for it.
 
 Notes produced are schema-identical to ingest's, so `recall`, `wiki`, and `doctor` work on them unchanged. Best run on an **Opus** session — partitioning and cross-unit weave are the judgment-heavy steps.
 
@@ -223,7 +239,8 @@ Notes live in `.nexis/` at the root of your project — not inside the plugin di
     │   └── ...
     ├── wiki.manifest.md      # machine state for wiki sync (never rendered)
     ├── wiki-translate.manifest.md  # machine state for wiki-translate (per-locale policy + sync)
-    └── survey.manifest.md    # machine state for codebase survey (unit plan + resume checkpoint)
+    └── survey.manifest.md    # machine state for codebase survey (unit plan, resume checkpoint,
+                              #   per-repo commit + mined-history window)
 ```
 
 Commit `.nexis/` to share notes with your team, or add it to `.gitignore` to keep notes personal.

@@ -139,7 +139,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/mermaid-lint.mjs" --root "<content_root>" --
 
 ## B6 — Home reduce + manifest
 
-Write the landing `<root>/index.md` (`<root>` = content root, per Step 1.5) from the returned topic **summaries** + cross-topic links only (no body re-reads). Keep it a short, orienting entry point — not an exhaustive reference:
+Write the landing `<root>/index.md` (`<root>` = content root, per Step 1.5) from the returned topic **summaries** + cross-topic links only (no body re-reads). Write it in the same reader-first register the page writer uses (short sentences, plain words, short paragraphs, lead with the point — see `agents/wiki-page.md` Step 3), and never leak note-machinery vocabulary. Keep it a short, orienting entry point — not an exhaustive reference:
 - a project overview,
 - a small italicized **generated-at line** — **this is required, never omit it** — as its own paragraph, e.g. `*Generated from durable knowledge notes on <human-readable date-time derived from the Step 0 timestamp>.*` so readers can gauge freshness. Refresh it on every sync. (The Quality checklist re-checks this.)
 - a brief **how to read this wiki** guide (how topics/sections are organized, where to start),

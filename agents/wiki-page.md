@@ -32,6 +32,19 @@ Lead each page with a short overview paragraph. Write section headings that name
 
 ## Step 3 — Human-friendly presentation (required)
 
+Your job is to **synthesize** the notes into a page a newcomer can read top to bottom and understand — not to transcribe them. Notes are terse, atomic, and written for a machine to retrieve; a page is continuous prose written for a human to learn from. Merge what several notes say about one thing into one clear explanation; drop the machine scaffolding.
+
+**Register — write for a reader whose English is their second language.**
+- **Simplify the words, not the ideas.** One idea per sentence. Ordinary words. Short paragraphs — 2 to 4 sentences, then break; a short list beats a long block. Give the full "why", but define each technical term the first time it appears.
+- **Lead each section with its point**, then support it. Length is a cost the reader pays — don't make them dig past a wall of text to find the takeaway.
+- **Show, don't only tell — reach for a concrete device whenever an idea is even slightly abstract.** You have three, not just one:
+  - **Diagrams** (see below) — for structure and flow.
+  - **A short code example or a tiny worked case** — for how something is used or what it produces. A three-line example teaches faster than a paragraph describing the same behavior.
+  - **A one-line analogy** — for a concept with no easy visual, when a plain-language comparison would make it click ("the middleware chain is a bucket brigade — each handler passes the request along or drops it").
+
+  Default to including one of these at every point where a reader might otherwise have to re-read. Prose carries the reasoning; the device makes it land.
+- **Never leak note-machinery vocabulary.** Words like *concept / entity / decision / problem note*, *supersedes*, *extends*, *status: active* describe how the knowledge is stored, not the project itself. Tell the project's story; keep the storage model invisible. (This extends the "no visible citations" rule below.)
+
 - **Reach for diagrams — they are the wiki's edge over prose.** Whenever a relationship would be clearer *seen* than read, draw it: **Mermaid** for architecture, dependency graphs (`depends-on` / `part-of`), sequences/flows, and decision evolution (`supersedes` chains). Lean toward visualizing rather than describing structure — a page that could have shown a diagram and didn't is a missed opportunity. How many, and of what kind, is your call from the topic's actual shape (not a quota) — but treat "could this be a diagram?" as a question worth asking at every structural moment, and default to yes when a reader would grasp it faster that way.
 - **Don't hold back for fear of a syntax slip.** The orchestrator runs a validator that auto-fixes the common mistakes and only bounces a page back on a genuinely unparseable diagram — so favor drawing the diagram and following the rules below, never skipping it to play safe.
 - **Mermaid must parse — follow these rules** (an invalid diagram renders as an error box, not a picture; the orchestrator runs a validator that will bounce a broken page back to you):
